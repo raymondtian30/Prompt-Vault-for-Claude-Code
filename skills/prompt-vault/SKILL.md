@@ -6,8 +6,7 @@ description: Store, organize, search, and retrieve prompts the user intends to s
 # Prompt Vault
 
 A global, cross-project, cross-session prompt manager. All data lives at
-`~/.claude/prompt-vault/prompts.md` (plus optional per-category views in
-`~/.claude/prompt-vault/categories/` and docs in
+`~/.claude/prompt-vault/prompts.md` (plus docs in
 `~/.claude/prompt-vault/README.md`). This is NOT project-local — never look
 for or create a vault inside the current project directory. Always use the
 absolute path under the user's home directory (`~/.claude/prompt-vault/`,
@@ -15,22 +14,18 @@ i.e. `$HOME/.claude/prompt-vault/`), regardless of which project or cwd this
 session is running in.
 
 On first use in a fresh environment where this path doesn't exist yet, create
-it (directory + `prompts.md` with the header shown below + empty
-`categories/` + `README.md`) before doing anything else. Otherwise, never
+it (directory + `prompts.md` with the header shown below + `README.md`)
+before doing anything else. Otherwise, never
 recreate or overwrite `prompts.md` wholesale — always read it first and make
 targeted edits.
 
-## Before implementing / on first invocation ever
+## First run
 
-The first time this skill is invoked in a given environment, before touching
-anything:
-1. Check whether `~/.claude/skills/prompt-vault/` and
-   `~/.claude/prompt-vault/` already exist and are populated, to avoid
-   duplicating setup work or clobbering existing prompts.
-2. Check whether `~/.claude/prompt-vault/prompts.md` exists. If not, create
-   the directory structure and seed files (see "Data file" below).
-3. Never require or perform any project-specific install step. This skill
-   must work identically from any working directory.
+Before touching anything, check whether `~/.claude/prompt-vault/prompts.md`
+exists. If not, create the directory structure and seed files (see "Data
+file" below). Never clobber an existing, populated vault. Never require or
+perform any project-specific install step. This skill must work identically
+from any working directory.
 
 ## Data file
 
@@ -54,7 +49,9 @@ Rules for this file:
 - IDs are `P` + 4-digit zero-padded sequence (`P0001`, `P0002`, ...), assigned
   in increasing order, **never reused** even after a delete. Track the next
   free number via the "Next ID counter" line near the top of the file, and
-  update that line every time you assign one.
+  update that line every time you assign one. If the counter line is missing
+  or not greater than the highest existing ID, set it to highest existing ID
+  + 1 and tell the user.
 - Checkbox in the heading: `[ ]` pending, `[x]` completed. This is the single
   source of truth for completion — keep the `Status:` line in sync with it
   (`pending`/`completed`) but the checkbox is canonical.
@@ -63,9 +60,8 @@ Rules for this file:
   category it belongs to (or infer from context and confirm) rather than
   defaulting silently.
 - `Priority` is optional — omit the line entirely if not given. Valid values
-  if present: High, Medium, Low (or whatever scale the user uses — don't
-  force it, just be consistent within the file).
-- `Created` is optional, an ISO date. Fill it in with today's date when a
+  if present: High, Medium, Low.
+- `Created` is required, an ISO date. Fill it in with today's date when a
   prompt is added, unless the user gives a different date.
 - The prompt text goes verbatim inside a fenced code block (use ` ```text `
   or match the content's own language if it's clearly code) so formatting,
@@ -75,7 +71,7 @@ Rules for this file:
 - Separate entries with a `---` line.
 - Read the file with Read, and make changes with Edit (exact string
   replacement) rather than rewriting the whole file, so unrelated entries are
-  never touched. Only use Write for the very first creation of the file.
+  never touched. Only use Write for the very first creation of `prompts.md`.
 
 ## Commands
 
@@ -161,11 +157,7 @@ asked.
 
 ### `/prompt-vault categories`
 List the five valid categories with a count of prompts in each from the
-current file. Optionally, if the user wants persistent per-category views,
-write/update the matching file under `~/.claude/prompt-vault/categories/`
-(e.g. `claude-code.md`) by extracting that category's entries — but treat
-`prompts.md` as the only authoritative copy; regenerate these on demand
-rather than maintaining them incrementally.
+current file.
 
 ## Natural-language routing
 

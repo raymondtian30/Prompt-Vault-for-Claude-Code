@@ -7,15 +7,18 @@ machine, in both the terminal and VS Code, and persists between sessions.
 
 ## Install
 
+Pinned to release `v1.0.0`. Piping a script into bash runs it unseen, so read
+it first if you prefer:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/raymondtian30/prompt-vault-skill/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/raymondtian30/Prompt-Vault-for-Claude-Code/v1.0.0/install.sh | bash
 ```
 
-Or clone the repo and run `install.sh` locally:
+Or clone the repo and run `install.sh` locally (also lets you inspect it):
 
 ```bash
-git clone https://github.com/raymondtian30/prompt-vault-skill.git
-cd prompt-vault-skill
+git clone https://github.com/raymondtian30/Prompt-Vault-for-Claude-Code.git
+cd Prompt-Vault-for-Claude-Code
 bash install.sh
 ```
 
@@ -62,7 +65,6 @@ about Code Explorer", "give me the next prompt I should send".
 Everything lives in plain Markdown under `~/.claude/prompt-vault/`:
 
 - `prompts.md` — the database, one entry per prompt.
-- `categories/` — optional per-category views, regenerated on demand.
 - `README.md` — local usage docs (copied in by the installer).
 
 Plain text, no dependencies, trivial to back up or move to another machine —
@@ -71,10 +73,20 @@ just copy the folder.
 ## Repo layout
 
 ```
+uninstall.sh                       removes the skill, keeps your data
 skills/prompt-vault/SKILL.md       the skill Claude Code reads
-prompt-vault-template/             clean template copied to ~/.claude/prompt-vault/ on first install
-install.sh                         installer — writes both of the above into ~/.claude
+prompt-vault-template/             prompts.md + README.md copied to ~/.claude/prompt-vault/ (prompts.md only on first install)
+install.sh                         installer — copies both of the above into ~/.claude (downloads them if run via curl)
 ```
+
+## Uninstall
+
+```bash
+bash uninstall.sh
+```
+
+Removes the skill only. Your prompts in `~/.claude/prompt-vault/` are kept;
+delete that folder yourself if you want them gone.
 
 ## License
 

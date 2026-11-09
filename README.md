@@ -7,11 +7,11 @@ machine, in both the terminal and VS Code, and persists between sessions.
 
 ## Install
 
-Pinned to release `v1.0.0`. Piping a script into bash runs it unseen, so read
+Pinned to release `v1.0.1`. Piping a script into bash runs it unseen, so read
 it first if you prefer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/raymondtian30/Prompt-Vault-for-Claude-Code/v1.0.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/raymondtian30/Prompt-Vault-for-Claude-Code/v1.0.1/install.sh | bash
 ```
 
 Or clone the repo and run `install.sh` locally (also lets you inspect it):

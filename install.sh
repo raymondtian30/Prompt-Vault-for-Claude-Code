@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Version this script was released with; override with PROMPT_VAULT_REF=main for latest.
-REF="${PROMPT_VAULT_REF:-v1.0.0}"
+REF="${PROMPT_VAULT_REF:-v1.0.1}"
 REPO_RAW="https://raw.githubusercontent.com/raymondtian30/Prompt-Vault-for-Claude-Code/$REF"
 SKILL_DIR="$HOME/.claude/skills/prompt-vault"
 VAULT_DIR="$HOME/.claude/prompt-vault"
@@ -43,9 +43,9 @@ install_file "$SRC/skills/prompt-vault/SKILL.md" "$SKILL_DIR/SKILL.md"
 
 if [ ! -f "$VAULT_DIR/prompts.md" ]; then
   cp "$SRC/prompt-vault-template/prompts.md" "$VAULT_DIR/prompts.md"
-  echo "Created ~/.claude/prompt-vault/prompts.md"
+  echo "Created $VAULT_DIR/prompts.md"
 else
-  echo "~/.claude/prompt-vault/prompts.md already exists — left untouched"
+  echo "$VAULT_DIR/prompts.md already exists — left untouched"
 fi
 
 install_file "$SRC/prompt-vault-template/README.md" "$VAULT_DIR/README.md"

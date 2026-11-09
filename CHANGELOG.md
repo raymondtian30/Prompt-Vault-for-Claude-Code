@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1 — 2026-11-09
+
+- Fix shellcheck SC2088 in `install.sh` so CI passes; pins updated to v1.0.1.
+
 ## v1.0.0 — 2026-11-09
 
 - Installer copies `skills/` and `prompt-vault-template/` instead of embedding duplicate heredocs; downloads them when run via `curl | bash`.

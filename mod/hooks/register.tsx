@@ -179,7 +179,7 @@ async function loadIntoBox($: any, options: any, id: string) {
 // ---------- pane and commands ----------
 
 async function openPane($: any) {
-  const r = await $.ui.open({ id: PANE, title: 'Prompt Vault', focus: true, closeOnEscape: true })
+  const r = await $.ui.open({ id: PANE, title: 'Prompt Vault', focus: true, closeOnEscape: true, rows: 20 })
   if (!r.isPlaced) $.ui.toast(`Prompt Vault pane could not open: ${r.reason ?? 'no room'}`)
   return r
 }
@@ -417,7 +417,7 @@ export const register: Register = (on, options) => {
       view: await read($, view),
       index: await read($, index),
       detail: await read($, detail),
-      pageSize: Number(options.pageSize) > 0 ? Number(options.pageSize) : 8,
+      pageSize: Number(options.pageSize) > 0 ? Number(options.pageSize) : 5,
     }
     return PaneScreen($.ui.resolve(e), d, makeActions($, options))
   })

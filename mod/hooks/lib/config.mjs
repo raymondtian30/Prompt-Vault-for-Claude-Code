@@ -17,7 +17,7 @@ export const USER_CONFIG = {
     "type": "number",
     "title": "Prompts per page",
     "description": "How many prompts the menu shows at once.",
-    "default": 8
+    "default": 5
   },
   "vaultDir": {
     "type": "string",

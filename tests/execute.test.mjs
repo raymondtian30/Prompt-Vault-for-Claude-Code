@@ -258,3 +258,17 @@ test('precheck explains each refusal in plain words', () => {
   assert.match(precheck({ ...ok, id: 'P0006' }).message, /more than once/)
   assert.match(precheck({ ...ok, id: 'P0099' }).message, /P0099/)
 })
+
+test('getExec may be async, as the mod reads state asynchronously', async () => {
+  const base = harness()
+  const h = harness({ getExec: async () => base.exec(), dispatch: base.deps.dispatch })
+  const r = await runPrompt(h.deps, { id: 'P0001', source: press })
+  assert.equal(r.ok, true)
+  assert.equal(base.exec().run.state, 'accepted')
+})
+
+test('now may be async: the slot records a number, not a promise', async () => {
+  const h = harness({ now: async () => 1234 })
+  await runPrompt(h.deps, { id: 'P0001', source: press })
+  assert.equal(h.exec().slot.startedAt, 1234)
+})

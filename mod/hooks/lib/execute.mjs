@@ -3,7 +3,8 @@
 //
 // deps: { loadVault, getExec, dispatch, submit, newToken, now, log, startTimer, settings }
 //   dispatch(event) applies a runstate.reduce event (the mod does it with the state
-//   library's compare-and-set update); getExec() reads the current exec state.
+//   library's compare-and-set update); getExec() reads the current exec state
+//   (sync or async).
 
 import { canExecute } from './runstate.mjs'
 
@@ -65,15 +66,15 @@ export function precheck({ vault, id, exec, confirmed, source, settings }) {
  */
 export async function runPrompt(deps, { id, confirmed = false, source }) {
   const vault = await deps.loadVault()
-  const pre = precheck({ vault, id, exec: deps.getExec(), confirmed, source, settings: deps.settings })
+  const pre = precheck({ vault, id, exec: await deps.getExec(), confirmed, source, settings: deps.settings })
   if (!pre.ok) {
     if (pre.code === 'needs-confirm') await deps.dispatch({ type: 'confirming', id })
     return pre
   }
   const entry = pre.entry
   const token = deps.newToken()
-  await deps.dispatch({ type: 'claim', claim: { token, promptId: id, startedAt: deps.now() } })
-  if (deps.getExec().slot?.token !== token) {
+  await deps.dispatch({ type: 'claim', claim: { token, promptId: id, startedAt: await deps.now() } })
+  if ((await deps.getExec()).slot?.token !== token) {
     return { ok: false, code: 'busy-slot', message: 'Another Execute is still in progress.' }
   }
 

@@ -53,3 +53,10 @@ test('every registry operation has a distinct name that /vault can dispatch', ()
   assert.equal(new Set(names).size, names.length)
   for (const o of OPERATIONS) assert.ok(o.syntax.startsWith('/vault'), o.id)
 })
+
+import { USER_CONFIG } from '../mod/hooks/lib/config.mjs'
+
+test('the settings the code knows about equal the manifest userConfig', () => {
+  const manifest = JSON.parse(read('mod/.claude-plugin/plugin.json'))
+  assert.deepEqual(USER_CONFIG, manifest.userConfig)
+})

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { OPERATIONS } from '../mod/hooks/lib/registry.mjs'
-import { searchHelp, renderHelp, settingsFromManifest, SHORTCUTS, FAQ, TROUBLESHOOTING } from '../mod/hooks/lib/help.mjs'
+import { searchHelp, renderHelp, helpMarkdown, settingsFromManifest, SHORTCUTS, FAQ, TROUBLESHOOTING } from '../mod/hooks/lib/help.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const manifest = JSON.parse(readFileSync(join(root, 'mod/.claude-plugin/plugin.json'), 'utf8'))
@@ -58,4 +58,18 @@ test('no match yields empty sections and a flag, not an error', () => {
 test('FAQ and troubleshooting entries are complete', () => {
   for (const x of [...FAQ, ...TROUBLESHOOTING]) assert.ok(x.q && x.a && x.q.length > 5 && x.a.length > 10, x.q)
   for (const s of SHORTCUTS) assert.ok(s.keys && s.does, s.keys)
+})
+
+test('helpMarkdown lists every operation with its syntax in code and its description', () => {
+  const md = helpMarkdown(searchHelp('', ctx))
+  for (const o of OPERATIONS) {
+    assert.ok(md.includes('`' + o.syntax + '`'), o.id + ' syntax')
+    assert.ok(md.includes(o.description), o.id + ' description')
+  }
+  assert.ok(md.includes('### Commands') && md.includes('### Keyboard') && md.includes('### Settings'))
+  assert.ok(md.includes('### FAQ') && md.includes('### Troubleshooting'))
+})
+
+test('helpMarkdown for a search with no hits says so', () => {
+  assert.equal(helpMarkdown(searchHelp('zzzzqqq', ctx)), 'No help matches "zzzzqqq".')
 })

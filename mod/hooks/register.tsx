@@ -9,17 +9,22 @@ const REPORT =
 const VAULT_COPY =
   '/private/tmp/claude-502/-Users-raymond-Desktop-Prompt-Vault-for-Claude-Code/3353d60f-15d7-464a-b9f1-9b563660fd9e/scratchpad/vault-copy'
 
-const seen = atom({ plugin: 'prompt-vault-mod', key: 'seen' } as const, [], { shape: 'seen-1' })
 const events = atom({ plugin: 'prompt-vault-mod', key: 'events' } as const, [], { shape: 'events-1' })
 const pings = atom({ plugin: 'prompt-vault-mod', key: 'pings' } as const, 0)
 const draft = atom({ plugin: 'prompt-vault-mod', key: 'draft' } as const, '')
 
 const facts: Record<string, unknown> = {}
+const seenSet = new Set<string>()
+const renders: Record<string, number> = {}
+let timerStarted = false
+let lastSubmitText = ''
+const SAMPLE = 'Spike test. Reply with exactly: OK\n```js\nconst a = 1\n```\n\tTab \u2713 \u00fcn\u00ef\r\nCRLF line\n\nlast line'
 
 async function save($: any) {
   const body = {
     facts,
-    seen: await read($, seen),
+    seen: [...seenSet],
+    renders,
     events: await read($, events),
     pings: await read($, pings),
     draftLength: (await read($, draft)).length,
@@ -33,9 +38,9 @@ async function note($: any, text: string) {
   await save($)
 }
 
-async function see($: any, key: string) {
-  await update($, seen, (list: string[]) => (list.includes(key) ? list : [...list, key]))
-  await save($)
+function see(key: string) {
+  seenSet.add(key)
+  renders[key] = (renders[key] ?? 0) + 1
 }
 
 export const register: Register = on => {
@@ -52,6 +57,10 @@ export const register: Register = on => {
     facts.home = home
     const opened = await $.ui.open({ id: PANE, title: 'Prompt Vault' })
     facts.openAtStart = opened
+    if (!timerStarted) {
+      timerStarted = true
+      $.clock.every(2000, () => save($))
+    }
     await note($, `session.start surface=${String((e as any).surface)} opened=${JSON.stringify(opened)}`)
     return next(e)
   })
@@ -117,17 +126,17 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    await note($, `turn.start agent=${String(e.agentId ?? 'main')} len=${String((e as any).text?.length)}`)
+    await note($, `turn.start agent=${String(e.agentId ?? 'main')} keys=${Object.keys(e).join(',')} sameAsLastSubmit=${(e as any).text === lastSubmitText}`)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    await note($, `turn.complete agent=${String((e as any).agentId ?? 'main')}`)
+    await note($, `turn.complete agent=${String((e as any).agentId ?? 'main')} keys=${Object.keys(e).join(',')}`)
     return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    await see($, `AbovePrompt@${e.surface}`)
+    see(`AbovePrompt@${e.surface}`)
     if (e.props.hasSurvey) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     return (
@@ -149,7 +158,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
     if (e.props.command !== 'vault') return next(e)
-    await see($, `CommandOutput@${e.surface}`)
+    see(`CommandOutput@${e.surface}`)
     if (!e.props.args.startsWith('tree')) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     return (
@@ -165,7 +174,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    await see($, `Pane@${e.surface}`)
+    see(`Pane@${e.surface}`)
     facts.paneProps = { ...e.props, placement: e.props.placement, viewport: e.viewport }
     const { Box, Text, Button, Input, Code } = $.ui.resolve(e)
     const count = await read($, pings)
@@ -178,6 +187,32 @@ export const register: Register = on => {
           viewport={JSON.stringify(e.viewport ?? null)} bodyColumns={e.props.bodyColumns}
         </Text>
         <Button key="ping" label={`ping (${count})`} onPress={() => update($, pings, (n: number) => n + 1).then(() => note($, 'pane ping pressed'))} />
+        <Button
+          key="submittest"
+          label="Test submit"
+          onPress={async () => {
+            lastSubmitText = SAMPLE
+            const started = await $.clock.now()
+            await note($, `submit test start len=${SAMPLE.length}`)
+            void $.prompt
+              .submit({ text: SAMPLE, asUser: true })
+              .then(async (r: any) => {
+                const ms = (await $.clock.now()) - started
+                await note($, `submit test resolved after ${ms}ms drop=${String(r.drop)} sameText=${r.text === SAMPLE} resultKeys=${Object.keys(r).join(',')}`)
+              })
+              .catch(async (err: unknown) => {
+                await note($, `submit test rejected ${String(err)}`)
+              })
+          }}
+        />
+        <Button
+          key="filltest"
+          label="Test fill box"
+          onPress={async () => {
+            const r = await $.prompt.fill({ text: 'filled by spike\nsecond line', mode: 'replace' })
+            await note($, `fill result ${JSON.stringify(r).slice(0, 200)}`)
+          }}
+        />
         <Input
           key="draft"
           label="draft"
@@ -192,7 +227,7 @@ export const register: Register = on => {
             void note($, `input submit len=${v.length}`)
           }}
         />
-        <Code>{list.slice(-6).join('\n') || 'no events yet'}</Code>
+        <Code source={list.slice(-6).join('\n') || 'no events yet'} />
       </Box>
     )
   })

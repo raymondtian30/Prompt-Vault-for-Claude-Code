@@ -124,3 +124,30 @@ export function renderHelp(r) {
   if (r.troubleshooting.length) out.push('', 'Troubleshooting', ...r.troubleshooting.flatMap(x => [`  ${x.q}`, `    ${x.a}`]))
   return out.join('\n')
 }
+
+/** Markdown rendering (used by the Help view, which draws it). */
+export function helpMarkdown(r) {
+  if (r.empty) return `No help matches "${r.query}".`
+  const out = []
+  if (r.operations.length) {
+    out.push('### Commands')
+    for (const o of r.operations) out.push(`\`${o.syntax}\``, o.description, `e.g. ${o.examples.map(x => '`' + x + '`').join('  ')}`, '')
+  }
+  if (r.shortcuts.length) {
+    out.push('### Keyboard shortcuts')
+    for (const s of r.shortcuts) out.push(`**${s.keys}**: ${s.does}`, '')
+  }
+  if (r.settings.length) {
+    out.push('### Settings')
+    for (const s of r.settings) out.push(`**${s.key}** (default \`${JSON.stringify(s.default)}\`): ${s.description}`, '')
+  }
+  if (r.faq.length) {
+    out.push('### FAQ')
+    for (const x of r.faq) out.push(`**${x.q}**`, x.a, '')
+  }
+  if (r.troubleshooting.length) {
+    out.push('### Troubleshooting')
+    for (const x of r.troubleshooting) out.push(`**${x.q}**`, x.a, '')
+  }
+  return out.join('\n').trimEnd()
+}

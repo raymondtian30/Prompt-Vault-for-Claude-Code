@@ -60,3 +60,11 @@ test('the settings the code knows about equal the manifest userConfig', () => {
   const manifest = JSON.parse(read('mod/.claude-plugin/plugin.json'))
   assert.deepEqual(USER_CONFIG, manifest.userConfig)
 })
+
+import { MOD_VERSION } from '../mod/hooks/lib/config.mjs'
+
+test('the version the code reports equals the manifest version and package.json', () => {
+  const manifest = JSON.parse(read('mod/.claude-plugin/plugin.json'))
+  assert.equal(MOD_VERSION, manifest.version)
+  assert.equal(JSON.parse(read('package.json')).version, manifest.version)
+})

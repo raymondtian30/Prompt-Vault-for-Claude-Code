@@ -26,3 +26,5 @@ export const USER_CONFIG = {
     "default": ""
   }
 }
+
+export const MOD_VERSION = '1.1.0'

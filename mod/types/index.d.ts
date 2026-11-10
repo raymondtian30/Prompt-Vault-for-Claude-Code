@@ -1,9 +1,74 @@
+export type RunInfo = {
+  state: string
+  id: string
+  reason?: string
+  slow?: boolean
+  finished?: boolean
+}
+
+export type Exec = {
+  turn: { running: boolean; turnId?: string }
+  slot: { token: string; promptId: string; startedAt: number; phase: string; turnId?: string } | null
+  run: RunInfo | null
+}
+
+export type Seed = { title: string; category: string; priority: string; body: string }
+
+export type View = {
+  screen: string
+  page: number
+  query: string
+  filter: string
+  selectedId: string | null
+  pendingDelete: string | null
+  pendingStop: boolean
+  notice: string | null
+  helpQuery: string
+  formMode: string
+  formId: string | null
+  seed: Seed
+  formError: string | null
+}
+
+export type LightEntry = {
+  id: string
+  done: boolean
+  title: string
+  category?: string
+  priority?: string
+  created?: string
+  bodyLength: number
+  flag?: string
+  hay: string
+}
+
+export type Index =
+  | { ok: true; mtimeMs: number; counter?: number; entries: LightEntry[] }
+  | { ok: false; error: string; message: string }
+  | null
+
+export type Detail = {
+  id: string
+  done: boolean
+  title: string
+  category?: string
+  priority?: string
+  created?: string
+  bodyLength: number
+  flag?: string
+  preview: { text: string; hiddenLines: number; truncated: boolean }
+} | null
+
+export type Form = Seed & { runId: string }
+
 declare module 'claude-code' {
   interface PluginState {
     'prompt-vault-mod': {
-      events: Shaped<string[]>
-      pings: number
-      draft: string
+      exec: Shaped<Exec>
+      view: Shaped<View>
+      index: Shaped<Index>
+      detail: Shaped<Detail>
+      form: Shaped<Form>
     }
   }
 }

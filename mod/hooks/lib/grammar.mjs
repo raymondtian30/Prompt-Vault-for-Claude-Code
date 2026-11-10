@@ -186,15 +186,17 @@ export function chooseFence(body) {
 
 /**
  * Render one entry as it is stored: heading, metadata, fenced body, separator.
- * @param {{ id: string, done: boolean, title: string, category: string, priority?: string, created: string, extra?: string[], body: string }} e
+ * `eol` (default LF) is used for the entry's own lines only; the body is never altered.
+ * @param {{ id: string, done: boolean, title: string, category: string, priority?: string, created: string, extra?: string[], body: string, eol?: string }} e
  */
 export function renderEntry(e) {
+  const eol = e.eol ?? '\n'
   const fence = chooseFence(e.body)
   const lines = [`## [${e.done ? 'x' : ' '}] ${e.id}: ${e.title}`, `- Category: ${e.category}`]
   if (e.priority) lines.push(`- Priority: ${e.priority}`)
   lines.push(`- Created: ${e.created}`, `- Status: ${e.done ? 'completed' : 'pending'}`)
   for (const x of e.extra ?? []) lines.push(x)
-  return lines.join('\n') + `\n\n${fence}text\n${e.body}\n${fence}\n\n---\n`
+  return lines.join(eol) + `${eol}${eol}${fence}text${eol}${e.body}${eol}${fence}${eol}${eol}---${eol}`
 }
 
 const idNumber = id => Number(String(id).slice(1))

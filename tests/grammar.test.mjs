@@ -163,3 +163,10 @@ test('nextId takes the larger of counter and highest id plus one, and flags a re
   assert.deepEqual(nextId({ counter: undefined }, []), { id: 'P0001', counter: 2, repaired: false })
   assert.deepEqual(nextId({ counter: 10 }, [{ id: 'P0002' }]), { id: 'P0010', counter: 11, repaired: false })
 })
+
+test('renderEntry can use CRLF for its own lines and still round-trips the body untouched', () => {
+  const body = 'line one\nline two'
+  const text = renderEntry({ id: 'P0001', done: false, title: 'T', category: 'Other', created: '2026-11-10', body, eol: '\r\n' })
+  assert.ok(text.startsWith('## [ ] P0001: T\r\n- Category: Other\r\n'))
+  assert.equal(parseVault(wrap(text)).entries[0].body, body)
+})

@@ -4,12 +4,13 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import {
-  CATEGORIES,
   PRIORITIES,
   parseVault,
   chooseFence,
   renderEntry,
   nextId,
+  isValidProjectName,
+  listProjects,
 } from '../mod/hooks/lib/grammar.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -19,24 +20,23 @@ const wrap = (entries, counter = 9) =>
   `# DB\n\nNext ID counter: ${counter}\n\n<!-- PROMPTS START -->\n${entries}<!-- PROMPTS END -->\n`
 
 const entry = (id, body, { fence = '```text', close = '```', title = 'T', extra = '' } = {}) =>
-  `## [ ] ${id}: ${title}\n- Category: Claude Code\n- Created: 2026-11-09\n- Status: pending\n${extra}\n${fence}\n${body}\n${close}\n\n---\n`
+  `## [ ] ${id}: ${title}\n- Project: Claude Code\n- Created: 2026-11-09\n- Status: pending\n${extra}\n${fence}\n${body}\n${close}\n\n---\n`
 
-test('constants match the skill: five categories, three priorities', () => {
-  assert.deepEqual(CATEGORIES, ['Claude Code', 'ChatGPT', 'Coding Projects', 'Research', 'Other'])
+test('constants match the skill: three priorities', () => {
   assert.deepEqual(PRIORITIES, ['High', 'Medium', 'Low'])
 })
 
 test('parses a vault shaped like the real one', () => {
   const v = parseVault(fixture('shape-of-real-vault.md'))
   assert.equal(v.entries.length, 2)
-  assert.equal(v.header.counter, 3)
+  assert.deepEqual(v.header.projects, [])
   assert.equal(v.hasStart, true)
   assert.equal(v.hasEnd, true)
   const [a, b] = v.entries
   assert.equal(a.id, 'P0001')
   assert.equal(a.done, false)
   assert.equal(a.title, 'Short one')
-  assert.equal(a.category, 'Claude Code')
+  assert.equal(a.project, 'Claude Code')
   assert.equal(a.priority, undefined)
   assert.equal(a.created, '2026-11-09')
   assert.equal(a.body, 'hello world')
@@ -110,11 +110,6 @@ test('a missing end marker is reported and entries still parse', () => {
   assert.equal(v.entries.length, 1)
 })
 
-test('a counter line below the start marker is not taken as the header counter', () => {
-  const v = parseVault(wrap(entry('P0001', 'Next ID counter: 99')))
-  assert.equal(v.header.counter, 9)
-})
-
 test('legacy entry whose inner fence closed early is flagged and recovered read-only', () => {
   const legacy =
     '## [ ] P0001: Old\n- Category: Claude Code\n- Created: 2026-11-09\n- Status: pending\n\n```text\nstep one\n```js\ncode\n```\nstep two\n```\n\n---\n'
@@ -149,24 +144,73 @@ test('renderEntry then parse returns the same body for tricky bodies', () => {
     'x'.repeat(100000),
   ]
   for (const body of bodies) {
-    const text = wrap(renderEntry({ id: 'P0001', done: false, title: 'T', category: 'Other', created: '2026-11-10', body }))
+    const text = wrap(renderEntry({ id: 'P0001', done: false, title: 'T', project: 'Other', created: '2026-11-10', body }))
     const e = parseVault(text).entries[0]
     assert.equal(e.body, body)
     assert.equal(e.legacy, undefined)
   }
 })
 
-test('nextId takes the larger of counter and highest id plus one, and flags a repair', () => {
-  assert.deepEqual(nextId({ counter: 3 }, [{ id: 'P0001' }, { id: 'P0002' }]), { id: 'P0003', counter: 4, repaired: false })
-  assert.deepEqual(nextId({ counter: 1 }, [{ id: 'P0005' }]), { id: 'P0006', counter: 7, repaired: true })
-  assert.deepEqual(nextId({ counter: undefined }, [{ id: 'P0002' }]), { id: 'P0003', counter: 4, repaired: true })
-  assert.deepEqual(nextId({ counter: undefined }, []), { id: 'P0001', counter: 2, repaired: false })
-  assert.deepEqual(nextId({ counter: 10 }, [{ id: 'P0002' }]), { id: 'P0010', counter: 11, repaired: false })
+test('nextId is the lowest unused number, so a deleted id is reused', () => {
+  assert.equal(nextId([]).id, 'P0001')
+  assert.equal(nextId([{ id: 'P0001' }, { id: 'P0002' }]).id, 'P0003')
+  assert.equal(nextId([{ id: 'P0002' }, { id: 'P0003' }]).id, 'P0001')
+  assert.equal(nextId([{ id: 'P0001' }, { id: 'P0003' }]).id, 'P0002')
+  assert.equal(nextId([{ id: 'P0001' }, { id: 'P0001' }, { id: 'P0002' }]).id, 'P0003')
+  assert.equal(nextId([{ id: 'P10000' }]).id, 'P0001')
+})
+
+test('a legacy Category line is read as the project, and Project wins when both exist', () => {
+  const legacy = '## [ ] P0001: A\n- Category: Old name\n- Created: 2026-11-09\n- Status: pending\n\n```text\nx\n```\n\n---\n'
+  assert.equal(parseVault(wrap(legacy)).entries[0].project, 'Old name')
+  const both = '## [ ] P0001: A\n- Category: Old\n- Project: New\n- Created: 2026-11-09\n- Status: pending\n\n```text\nx\n```\n\n---\n'
+  assert.equal(parseVault(wrap(both)).entries[0].project, 'New')
+})
+
+test('an entry with no project line is unfiled; render omits the line when there is no project', () => {
+  const none = '## [ ] P0001: A\n- Created: 2026-11-09\n- Status: pending\n\n```text\nx\n```\n\n---\n'
+  assert.equal(parseVault(wrap(none)).entries[0].project, undefined)
+  const text = renderEntry({ id: 'P0001', done: false, title: 'T', created: '2026-11-10', body: 'x' })
+  assert.ok(!text.includes('- Project:'))
+  assert.ok(!text.includes('- Category:'))
+})
+
+test('the header Projects line lists projects, including ones with no prompts yet', () => {
+  const text = '# DB\n\nProjects: Alpha, Beta ,  Gamma\n\n<!-- PROMPTS START -->\n<!-- PROMPTS END -->\n'
+  assert.deepEqual(parseVault(text).header.projects, ['Alpha', 'Beta', 'Gamma'])
+  assert.deepEqual(parseVault('# DB\n\n<!-- PROMPTS START -->\n<!-- PROMPTS END -->\n').header.projects, [])
+  const below = wrap(entry('P0001', 'Projects: Sneaky'))
+  assert.deepEqual(parseVault(below).header.projects, [])
+})
+
+test('listProjects: header order first, then projects only entries mention; unfiled counted apart', () => {
+  const v = parseVault(
+    '# DB\n\nProjects: Beta, Empty\n\n<!-- PROMPTS START -->\n' +
+      renderEntry({ id: 'P0001', done: false, title: 'a', project: 'Alpha', created: 'd', body: 'x' }) +
+      renderEntry({ id: 'P0002', done: false, title: 'b', project: 'Beta', created: 'd', body: 'x' }) +
+      renderEntry({ id: 'P0003', done: false, title: 'c', created: 'd', body: 'x' }) +
+      renderEntry({ id: 'P0004', done: false, title: 'd', project: 'Beta', created: 'd', body: 'x' }) +
+      '<!-- PROMPTS END -->\n',
+  )
+  assert.deepEqual(listProjects(v.header, v.entries), {
+    projects: [
+      { name: 'Beta', count: 2 },
+      { name: 'Empty', count: 0 },
+      { name: 'Alpha', count: 1 },
+    ],
+    unfiled: 1,
+  })
+})
+
+test('project names: non-empty, one line, no commas, at most 60 characters', () => {
+  assert.equal(isValidProjectName('AI Sanctum'), true)
+  for (const bad of ['', '   ', 'a,b', 'two\nlines', 'x'.repeat(61), undefined]) assert.equal(isValidProjectName(bad), false, String(bad))
+  assert.equal(isValidProjectName('x'.repeat(60)), true)
 })
 
 test('renderEntry can use CRLF for its own lines and still round-trips the body untouched', () => {
   const body = 'line one\nline two'
-  const text = renderEntry({ id: 'P0001', done: false, title: 'T', category: 'Other', created: '2026-11-10', body, eol: '\r\n' })
-  assert.ok(text.startsWith('## [ ] P0001: T\r\n- Category: Other\r\n'))
+  const text = renderEntry({ id: 'P0001', done: false, title: 'T', project: 'Other', created: '2026-11-10', body, eol: '\r\n' })
+  assert.ok(text.startsWith('## [ ] P0001: T\r\n- Project: Other\r\n'))
   assert.equal(parseVault(wrap(text)).entries[0].body, body)
 })

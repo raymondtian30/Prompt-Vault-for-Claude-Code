@@ -2,14 +2,14 @@
 // Canonical rules live in skills/prompt-vault/SKILL.md; tests/drift.test.mjs
 // asserts these constants match it.
 
-export const CATEGORIES = ['Claude Code', 'ChatGPT', 'Coding Projects', 'Research', 'Other']
 export const PRIORITIES = ['High', 'Medium', 'Low']
+export const PROJECT_NAME_MAX = 60
 export const START_MARKER = '<!-- PROMPTS START -->'
 export const END_MARKER = '<!-- PROMPTS END -->'
 export const MIN_FENCE = 3
 
 const HEADING_RE = /^## \[( |x)\] (P\d{4,}): (.*)$/
-const COUNTER_RE = /^Next ID counter:\s*(\d+)\s*$/
+const PROJECTS_RE = /^Projects:[ \t]*(.*)$/
 const META_RE = /^- ([^:]+):\s?(.*)$/
 const OPEN_RE = /^(`{3,})([^`]*)$/
 const BARE_FENCE_RE = /^`{3,}\s*$/
@@ -49,10 +49,10 @@ export function parseVault(text) {
   const hasStart = startIdx !== -1
   const firstHeading = lines.findIndex(l => HEADING_RE.test(l.text))
   const headerEnd = hasStart ? startIdx : firstHeading === -1 ? lines.length : firstHeading
-  let counter
+  let projects = []
   for (let i = 0; i < headerEnd; i++) {
-    const m = COUNTER_RE.exec(lines[i].text)
-    if (m) counter = Number(m[1])
+    const m = PROJECTS_RE.exec(lines[i].text)
+    if (m) projects = m[1].split(',').map(x => x.trim()).filter(Boolean)
   }
 
   const entries = []
@@ -86,7 +86,7 @@ export function parseVault(text) {
     }
   }
 
-  return { header: { counter }, entries, errors, hasStart, hasEnd }
+  return { header: { projects }, entries, errors, hasStart, hasEnd }
 }
 
 function parseEntry(text, lines, i, h) {
@@ -94,7 +94,7 @@ function parseEntry(text, lines, i, h) {
     id: h[2],
     done: h[1] === 'x',
     title: h[3],
-    category: undefined,
+    project: undefined,
     priority: undefined,
     created: undefined,
     status: undefined,
@@ -112,12 +112,16 @@ function parseEntry(text, lines, i, h) {
     const m = META_RE.exec(t)
     if (!m) break
     const key = m[1]
-    if (key === 'Category') entry.category = m[2]
+    if (key === 'Project') entry.project = m[2]
+    else if (key === 'Category') entry.legacyProject = m[2]
     else if (key === 'Priority') entry.priority = m[2]
     else if (key === 'Created') entry.created = m[2]
     else if (key === 'Status') entry.status = m[2]
     else entry.extra.push(t)
   }
+
+  if (entry.project === undefined && entry.legacyProject !== undefined) entry.project = entry.legacyProject
+  delete entry.legacyProject
 
   const finish = (endLine, extraFields) => {
     const end = endLine < lines.length ? lines[endLine].start : text.length
@@ -187,40 +191,50 @@ export function chooseFence(body) {
 /**
  * Render one entry as it is stored: heading, metadata, fenced body, separator.
  * `eol` (default LF) is used for the entry's own lines only; the body is never altered.
- * @param {{ id: string, done: boolean, title: string, category: string, priority?: string, created: string, extra?: string[], body: string, eol?: string }} e
+ * `project` is optional: an entry without one is unfiled.
+ * @param {{ id: string, done: boolean, title: string, project?: string, priority?: string, created: string, extra?: string[], body: string, eol?: string }} e
  */
 export function renderEntry(e) {
   const eol = e.eol ?? '\n'
   const fence = chooseFence(e.body)
-  const lines = [`## [${e.done ? 'x' : ' '}] ${e.id}: ${e.title}`, `- Category: ${e.category}`]
+  const lines = [`## [${e.done ? 'x' : ' '}] ${e.id}: ${e.title}`]
+  if (e.project) lines.push(`- Project: ${e.project}`)
   if (e.priority) lines.push(`- Priority: ${e.priority}`)
   lines.push(`- Created: ${e.created}`, `- Status: ${e.done ? 'completed' : 'pending'}`)
   for (const x of e.extra ?? []) lines.push(x)
   return lines.join(eol) + `${eol}${eol}${fence}text${eol}${e.body}${eol}${fence}${eol}${eol}---${eol}`
 }
 
+/** A project name is one non-empty line without commas (the header list is comma separated). */
+export function isValidProjectName(name) {
+  return typeof name === 'string' && name.trim() !== '' && name.trim().length <= PROJECT_NAME_MAX && !/[,\r\n]/.test(name)
+}
+
+/**
+ * The projects in order: those listed in the header first, then any only entries mention.
+ * Prompts with no project are counted apart as `unfiled`.
+ */
+export function listProjects(header, entries) {
+  const counts = new Map()
+  for (const name of header.projects ?? []) counts.set(name, 0)
+  let unfiled = 0
+  for (const e of entries) {
+    if (!e.project) unfiled++
+    else counts.set(e.project, (counts.get(e.project) ?? 0) + 1)
+  }
+  return { projects: [...counts].map(([name, count]) => ({ name, count })), unfiled }
+}
+
 const idNumber = id => Number(String(id).slice(1))
 const formatId = n => 'P' + String(n).padStart(4, '0')
 
 /**
- * The next free ID: the counter, repaired upward when it is not above every existing ID.
- * @param {{ counter?: number }} header
+ * The next ID is the lowest number no entry uses, so deleting P0001 frees it for the next prompt.
  * @param {{ id: string }[]} entries
  */
-export function nextId(header, entries) {
-  const maxId = entries.reduce((m, e) => Math.max(m, idNumber(e.id)), 0)
-  const counter = header.counter
-  let next
-  let repaired
-  if (counter === undefined) {
-    next = maxId + 1
-    repaired = entries.length > 0
-  } else if (counter > maxId) {
-    next = counter
-    repaired = false
-  } else {
-    next = maxId + 1
-    repaired = true
-  }
-  return { id: formatId(next), counter: next + 1, repaired }
+export function nextId(entries) {
+  const used = new Set(entries.map(e => idNumber(e.id)))
+  let n = 1
+  while (used.has(n)) n++
+  return { id: formatId(n) }
 }

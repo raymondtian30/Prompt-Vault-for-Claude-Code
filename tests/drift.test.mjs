@@ -68,3 +68,28 @@ test('the version the code reports equals the manifest version and package.json'
   assert.equal(MOD_VERSION, manifest.version)
   assert.equal(JSON.parse(read('package.json')).version, manifest.version)
 })
+
+test('the release version is the same in manifest, install.sh, README pin and CHANGELOG head', () => {
+  const v = JSON.parse(read('mod/.claude-plugin/plugin.json')).version
+  assert.match(read('install.sh'), new RegExp(`REF="\\$\\{PROMPT_VAULT_REF:-v${v.replace(/\./g, '\\.')}\\}"`))
+  assert.ok(read('README.md').includes(`/v${v}/install.sh`), 'README install URL pin')
+  const head = read('CHANGELOG.md').match(/^## (v[0-9][^\s]*)/m)
+  assert.equal(head && head[1], 'v' + v)
+})
+
+test('README documents every /vault operation with its exact syntax', () => {
+  const readme = read('README.md')
+  for (const o of OPERATIONS) assert.ok(readme.includes('`' + o.syntax + '`'), o.syntax)
+})
+
+test('README documents every setting the mod declares', () => {
+  const readme = read('README.md')
+  for (const key of Object.keys(USER_CONFIG)) assert.ok(readme.includes('`' + key + '`'), key)
+})
+
+test('the mod ships an icon', () => {
+  const png = readFileSync(join(root, 'mod/.claude-plugin/icon.png'))
+  assert.equal(png.subarray(1, 4).toString(), 'PNG')
+  assert.equal(png.readUInt32BE(16), 512)
+  assert.equal(png.readUInt32BE(20), 512)
+})

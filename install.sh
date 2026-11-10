@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Version this script was released with; override with PROMPT_VAULT_REF=main for latest.
-REF="${PROMPT_VAULT_REF:-v1.0.1}"
+REF="${PROMPT_VAULT_REF:-v1.1.0}"
 REPO_RAW="https://raw.githubusercontent.com/raymondtian30/Prompt-Vault-for-Claude-Code/$REF"
 SKILL_DIR="$HOME/.claude/skills/prompt-vault"
 VAULT_DIR="$HOME/.claude/prompt-vault"

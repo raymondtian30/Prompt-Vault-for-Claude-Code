@@ -6,7 +6,8 @@
 // subcommand it mirrors) or modOnly. tests/drift.test.mjs checks the skill list
 // against SKILL.md so the two cannot drift apart unnoticed.
 
-import { CATEGORIES } from './grammar.mjs'
+import { CATEGORIES, PRIORITIES } from './grammar.mjs'
+import { setDone, addEntry, editEntry, deleteEntry } from './edit.mjs'
 
 const op = (o) => Object.freeze(o)
 
@@ -52,6 +53,36 @@ export const OPERATIONS = Object.freeze([
     examples: ['/vault load P0003'], section: 'Execute', surfaces: ['slash', 'button'], modOnly: true,
   }),
   op({
+    id: 'done', name: 'done', syntax: '/vault done <id>',
+    description: 'Mark a prompt completed. This is the only way a prompt is marked done; Execute and viewing never do it.',
+    examples: ['/vault done P0003'], section: 'Manage', surfaces: ['skill', 'slash', 'button'], skillEquivalent: 'done',
+  }),
+  op({
+    id: 'reopen', name: 'reopen', syntax: '/vault reopen <id>',
+    description: 'Mark a completed prompt pending again.',
+    examples: ['/vault reopen P0003'], section: 'Manage', surfaces: ['skill', 'slash', 'button'], skillEquivalent: 'done',
+  }),
+  op({
+    id: 'add', name: 'add', syntax: '/vault add <category>[:<priority>] | <title> | <prompt text>',
+    description: 'Save a new prompt. The category is required (no default) and is one of the five categories; the text after the second | is stored exactly as typed, newlines and | included.',
+    examples: ['/vault add Research:High | Compare vector stores | List the trade-offs of ...'], section: 'Manage', surfaces: ['skill', 'slash', 'button'], skillEquivalent: 'add',
+  }),
+  op({
+    id: 'edit', name: 'edit', syntax: '/vault edit <id> title|category|priority|body <value>',
+    description: 'Change one field of a prompt. "priority clear" removes the priority. Only that prompt is rewritten; the others stay byte for byte as they were.',
+    examples: ['/vault edit P0003 title Better title', '/vault edit P0003 priority clear'], section: 'Manage', surfaces: ['skill', 'slash', 'button'], skillEquivalent: 'edit',
+  }),
+  op({
+    id: 'delete', name: 'delete', syntax: '/vault delete <id> [confirm]',
+    description: 'Delete a prompt after confirmation. Its ID is never reused.',
+    examples: ['/vault delete P0003', '/vault delete P0003 confirm'], section: 'Manage', surfaces: ['skill', 'slash', 'button'], skillEquivalent: 'delete',
+  }),
+  op({
+    id: 'stop', name: 'stop', syntax: '/vault stop [confirm]',
+    description: 'Stop the turn Execute started. Stopping can leave a tool half-finished, so it asks first.',
+    examples: ['/vault stop', '/vault stop confirm'], section: 'Execute', surfaces: ['slash', 'button'], modOnly: true,
+  }),
+  op({
     id: 'refresh', name: 'refresh', syntax: '/vault refresh',
     description: 'Re-read prompts.md. The menu does this when it opens and after every change; use it after the skill or a text editor changed the file.',
     examples: ['/vault refresh'], section: 'Vault', surfaces: ['slash', 'button'], modOnly: true,
@@ -87,6 +118,16 @@ const normId = s => String(s ?? '').trim().toUpperCase()
 const line = e => `${e.done ? '[x]' : '[ ]'} ${e.id} ${e.title} · ${e.category ?? 'no category'}${e.priority ? ' · ' + e.priority : ''}`
 const bad = ctx => (ctx.vault.ok ? null : { ok: false, text: ctx.vault.message })
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
+
+const canon = (list, v) => list.find(x => x.toLowerCase() === String(v).toLowerCase()) ?? v
+
+async function toggle(ctx, args, done) {
+  const id = normId(args.trim().split(/\s+/)[0])
+  if (id === '') return { ok: false, text: `Usage: /vault ${done ? 'done' : 'reopen'} <id>` }
+  const r = await ctx.mutate(t => setDone(t, id, done), { touched: id })
+  if (!r.ok) return { ok: false, text: r.message }
+  return { ok: true, text: r.changed ? `${id} ${done ? 'marked done' : 'reopened'}.` : `${id} was already ${done ? 'done' : 'pending'}.`, data: r }
+}
 
 const PRIORITY_RANK = { High: 0, Medium: 1, Low: 2 }
 
@@ -175,6 +216,64 @@ export function createHandlers() {
       const id = normId(args)
       if (id === '') return { ok: false, text: 'Usage: /vault load <id>' }
       return ctx.load(id)
+    },
+
+    async done(ctx, args) {
+      return toggle(ctx, args, true)
+    },
+
+    async reopen(ctx, args) {
+      return toggle(ctx, args, false)
+    },
+
+    async add(ctx, args) {
+      const i = args.indexOf('|')
+      const j = i < 0 ? -1 : args.indexOf('|', i + 1)
+      const usage = { ok: false, text: 'Usage: /vault add <category>[:<priority>] | <title> | <prompt text>' }
+      if (i < 0 || j < 0) return usage
+      const [catRaw, priRaw] = args.slice(0, i).trim().split(':').map(x => x.trim())
+      const fields = {
+        title: args.slice(i + 1, j).trim(),
+        category: catRaw ? canon(CATEGORIES, catRaw) : undefined,
+        priority: priRaw ? canon(PRIORITIES, priRaw) : undefined,
+        created: ctx.today(),
+        body: args.slice(j + 1).replace(/^ /, ''),
+      }
+      const r = await ctx.mutate(t => addEntry(t, fields), {})
+      if (!r.ok) return { ok: false, text: r.message }
+      return { ok: true, text: `Added ${r.id} "${fields.title}".${r.repaired ? ' The ID counter was out of date and has been repaired.' : ''}`, data: r }
+    },
+
+    async edit(ctx, args) {
+      const m = /^(\S+)\s+(title|category|priority|body)(?: ([\s\S]*))?$/i.exec(args)
+      if (!m || m[3] === undefined) return { ok: false, text: 'Usage: /vault edit <id> title|category|priority|body <value>' }
+      const id = normId(m[1])
+      const field = m[2].toLowerCase()
+      const value = m[3]
+      const changes =
+        field === 'title' ? { title: value }
+        : field === 'category' ? { category: canon(CATEGORIES, value.trim()) }
+        : field === 'priority' ? { priority: value.trim().toLowerCase() === 'clear' ? null : canon(PRIORITIES, value.trim()) }
+        : { body: value }
+      const r = await ctx.mutate(t => editEntry(t, id, changes), { touched: id })
+      if (!r.ok) return { ok: false, text: r.message }
+      return { ok: true, text: r.changed ? `Updated ${id}.` : 'Nothing to change.', data: r }
+    },
+
+    async delete(ctx, args) {
+      const [idRaw, word] = args.trim().split(/\s+/)
+      const id = normId(idRaw)
+      if (id === '') return { ok: false, text: 'Usage: /vault delete <id>' }
+      if ((word ?? '').toLowerCase() !== 'confirm') {
+        return { ok: true, text: `This permanently deletes ${id}. Run /vault delete ${id} confirm to go ahead.` }
+      }
+      const r = await ctx.mutate(t => deleteEntry(t, id), { touched: id })
+      if (!r.ok) return { ok: false, text: r.message }
+      return { ok: true, text: `Deleted ${id}.`, data: r }
+    },
+
+    async stop(ctx, args) {
+      return ctx.stop(args.trim())
     },
 
     async refresh(ctx) {

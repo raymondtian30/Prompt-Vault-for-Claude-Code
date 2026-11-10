@@ -131,3 +131,82 @@ test('run, load, refresh, help and doctor hand off to the host', async () => {
   await handlers.doctor(ctx, '')
   assert.deepEqual(seen.slice(1).map(s => s[0]), ['load', 'refresh', 'help', 'doctor'])
 })
+
+// ---- write operations ----
+import { parseVault as pv } from '../mod/hooks/lib/grammar.mjs'
+
+const W_TEXT = `# DB\n\nNext ID counter: 3\n\n<!-- PROMPTS START -->\n${mk('P0001')}${mk('P0002', { done: true })}<!-- PROMPTS END -->\n`
+const wctx = () => {
+  const calls = []
+  return {
+    calls,
+    vault: { ok: true, ...pv(W_TEXT) },
+    today: () => '2026-11-10',
+    mutate: async (edit, opts) => {
+      calls.push(opts)
+      return edit(W_TEXT)
+    },
+    stop: async args => ({ ok: true, text: 'stop ' + args }),
+  }
+}
+
+test('done and reopen go through the guarded mutate and name the id', async () => {
+  const c = wctx()
+  const d = await handlers.done(c, 'p0001')
+  assert.deepEqual([d.ok, d.text], [true, 'P0001 marked done.'])
+  assert.deepEqual(c.calls[0], { touched: 'P0001' })
+  const r = await handlers.reopen(c, 'P0002')
+  assert.equal(r.text, 'P0002 reopened.')
+  assert.match((await handlers.done(c, '')).text, /Usage: \/vault done <id>/)
+  assert.match((await handlers.done(c, 'P0099')).text, /No prompt P0099/)
+})
+
+test('add parses "category[:priority] | title | text", keeps the text whole, and has no default category', async () => {
+  const c = wctx()
+  const ok = await handlers.add(c, 'research:high | My title | line one\nline | two')
+  assert.equal(ok.ok, true)
+  assert.match(ok.text, /Added P0003 "My title"/)
+  const e = pv(ok.data.text).entries.find(x => x.id === 'P0003')
+  assert.deepEqual([e.category, e.priority, e.title, e.body, e.created], ['Research', 'High', 'My title', 'line one\nline | two', '2026-11-10'])
+  assert.match((await handlers.add(c, '')).text, /Usage: \/vault add/)
+  assert.match((await handlers.add(c, 'My title | text')).text, /Usage: \/vault add/)
+  assert.match((await handlers.add(c, 'nope | t | b')).text, /Category must be one of/)
+  assert.match((await handlers.add(c, ' | t | b')).text, /Choose a category/)
+})
+
+test('edit changes one named field; priority clear removes it', async () => {
+  const c = wctx()
+  const t = await handlers.edit(c, 'P0001 title New title here')
+  assert.equal(t.ok, true)
+  assert.equal(pv(t.data.text).entries[0].title, 'New title here')
+  const p = await handlers.edit(c, 'P0001 priority High')
+  assert.equal(pv(p.data.text).entries[0].priority, 'High')
+  const cat = await handlers.edit(c, 'P0001 category Other')
+  assert.equal(pv(cat.data.text).entries[0].category, 'Other')
+  const b = await handlers.edit(c, 'P0001 body two\nlines')
+  assert.equal(pv(b.data.text).entries[0].body, 'two\nlines')
+  assert.match((await handlers.edit(c, 'P0001 nonsense x')).text, /Usage: \/vault edit/)
+  assert.match((await handlers.edit(c, 'P0001 title Title P0001')).text, /Nothing to change/)
+})
+
+test('delete asks first and only deletes when confirmed', async () => {
+  const c = wctx()
+  const ask = await handlers.delete(c, 'P0001')
+  assert.equal(ask.ok, true)
+  assert.match(ask.text, /\/vault delete P0001 confirm/)
+  assert.equal(c.calls.length, 0)
+  const done = await handlers.delete(c, 'P0001 confirm')
+  assert.equal(done.text, 'Deleted P0001.')
+  assert.equal(pv(done.data.text).entries.length, 1)
+  assert.match((await handlers.delete(c, '')).text, /Usage: \/vault delete <id>/)
+})
+
+test('stop hands off to the host', async () => {
+  assert.equal((await handlers.stop(wctx(), 'confirm')).text, 'stop confirm')
+})
+
+test('every skill command has a registry entry that mirrors it', () => {
+  const skillCommands = ['overview', 'add', 'done', 'edit', 'search', 'delete', 'next', 'send', 'list', 'categories']
+  const mirrored = new Set(OPERATIONS.map(o => o.skillEquivalent).filter(Boolean))
+  for (const c of skillCommands) assert.ok(mirrored.has(c), c)
+})

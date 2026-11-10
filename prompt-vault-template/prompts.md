@@ -9,6 +9,9 @@ Checkbox legend: `[ ]` = pending, `[x]` = completed.
 
 Valid categories: Claude Code, ChatGPT, Coding Projects, Research, Other.
 
+Fence rule: each prompt sits in a fence of N backticks (N = longest backtick
+run inside the prompt + 1, minimum 3), closed by a line of at least N backticks.
+
 Next ID counter: 1
 
 <!-- PROMPTS START -->

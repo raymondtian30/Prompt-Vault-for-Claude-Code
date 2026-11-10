@@ -1,0 +1,14 @@
+{
+  "name": "prompt-vault-for-claude-code",
+  "owner": {
+    "name": "Raymond Tian"
+  },
+  "plugins": [
+    {
+      "name": "prompt-vault-mod",
+      "source": "./mod",
+      "description": "Prompt Vault mod: browse, search and execute saved prompts from inside Claude Code."
+    }
+  ],
+  "description": "Prompt Vault for Claude Code: a vault of saved prompts you can browse and run from inside Claude Code."
+}

@@ -1,0 +1,9 @@
+{
+  "name": "prompt-vault-mod",
+  "version": "0.0.1-spike",
+  "description": "Prompt Vault mod: browse, search and execute saved prompts from inside Claude Code.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Raymond Tian"
+  }
+}

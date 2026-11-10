@@ -1,0 +1,8 @@
+{
+  "name": "prompt-vault-for-claude-code",
+  "private": true,
+  "version": "1.1.0",
+  "description": "Prompt Vault: Claude Code skill plus prompt-vault-mod. Tests only; no dependencies.",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test tests/" }
+}

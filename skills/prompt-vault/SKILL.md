@@ -13,6 +13,9 @@ absolute path under the user's home directory (`~/.claude/prompt-vault/`,
 i.e. `$HOME/.claude/prompt-vault/`), regardless of which project or cwd this
 session is running in.
 
+The optional `prompt-vault-mod` Claude Code mod reads and writes this same
+file under the same rules, so the skill and the mod can be used side by side.
+
 On first use in a fresh environment where this path doesn't exist yet, create
 it (directory + `prompts.md` with the header shown below + `README.md`)
 before doing anything else. Otherwise, never
@@ -29,9 +32,9 @@ from any working directory.
 
 ## Data file
 
-`~/.claude/prompt-vault/prompts.md` is the single source of truth. Format:
+`~/.claude/prompt-vault/prompts.md` is the single source of truth. Format (shown inside a four-backtick fence so the entry's own fence is visible):
 
-```
+````
 ## [ ] P0001: Token Savior
 - Category: Claude Code
 - Priority: High
@@ -43,7 +46,7 @@ from any working directory.
 ```
 
 ---
-```
+````
 
 Rules for this file:
 - IDs are `P` + 4-digit zero-padded sequence (`P0001`, `P0002`, ...), assigned
@@ -63,11 +66,30 @@ Rules for this file:
   if present: High, Medium, Low.
 - `Created` is required, an ISO date. Fill it in with today's date when a
   prompt is added, unless the user gives a different date.
-- The prompt text goes verbatim inside a fenced code block (use ` ```text `
-  or match the content's own language if it's clearly code) so formatting,
-  indentation, and any nested code blocks inside the prompt are preserved
-  exactly. **Never summarize, shorten, rewrite, or "clean up" the wording** —
-  preserve it exactly as given unless the user explicitly asks for an edit.
+- The prompt text goes verbatim inside a fenced code block, opened by a line
+  of N backticks followed by `text` and closed by a line of at least N
+  backticks. **N is one more than the longest run of backticks anywhere in
+  the prompt, and at least 3** — a prompt that contains a ` ``` ` line gets a
+  four-backtick fence, so the prompt cannot close its own fence early. The
+  stored prompt is exactly the text between the opening fence line and the
+  closing fence line: no trimming, no added or removed blank lines, original
+  line endings kept. Formatting, indentation, and nested code blocks inside
+  the prompt are preserved exactly. **Never summarize, shorten, rewrite, or
+  "clean up" the wording** — preserve it exactly as given unless the user
+  explicitly asks for an edit.
+- The entry heading is exactly `## [ ] P0001: Title` or `## [x] P0001: Title`;
+  the title is everything after the first `: `. Metadata lines come next
+  (`Category`, `Priority` if set, `Created`, `Status`); unknown `- Key: value`
+  lines are left untouched. A `---` line or a `## [ ] P…` line inside the
+  fence is part of the prompt, not the start of a new entry.
+- Entries live between the `<!-- PROMPTS START -->` and `<!-- PROMPTS END -->`
+  lines; new entries go immediately before the END line (at the end of the
+  file if it is missing). `Next ID counter:` is read only above the START
+  line.
+- An older entry whose prompt contains a ` ``` ` line may have been cut short
+  by its own fence. If you see one (text after the closing fence that is not
+  `---`), tell the user and offer to lengthen that entry's fence; do not guess
+  where the prompt ends.
 - Separate entries with a `---` line.
 - Read the file with Read, and make changes with Edit (exact string
   replacement) rather than rewriting the whole file, so unrelated entries are

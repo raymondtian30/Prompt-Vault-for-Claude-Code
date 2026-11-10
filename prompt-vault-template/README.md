@@ -42,9 +42,10 @@ Claude will route it to the right action.
 
 ## Data format
 
-Each entry in `prompts.md` looks like:
+Each entry in `prompts.md` looks like this (shown inside a four-backtick
+fence so the entry's own fence is visible):
 
-```
+````
 ## [ ] P0001: Token Savior
 - Category: Claude Code
 - Priority: High
@@ -56,7 +57,12 @@ Each entry in `prompts.md` looks like:
 ```
 
 ---
-```
+````
+
+The fence around a prompt has N backticks, where N is one more than the
+longest run of backticks inside the prompt (at least 3), so a prompt that
+contains a ` ``` ` line cannot cut itself short. The stored prompt is exactly
+the text between the opening and closing fence lines.
 
 IDs are zero-padded and never reused. Prompt wording is preserved exactly as
 given unless you explicitly ask for an edit. A prompt is only ever marked

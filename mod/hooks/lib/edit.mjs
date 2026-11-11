@@ -25,7 +25,7 @@ const unsafe = (entry, verb) =>
     ? fail('unsafe-entry', `${entry.id} cannot be ${verb} safely: its fence is not trustworthy. Fix it in prompts.md first.`)
     : null
 
-const validTitle = t => typeof t === 'string' && t.trim() !== '' && !/[\r\n]/.test(t)
+const validTitle = t => typeof t === 'string' && t.trim() !== '' && !/[\r\n\u2028\u2029]/.test(t)
 
 function validate({ title, project, priority, body }) {
   if (title !== undefined && !validTitle(title)) return fail('bad-title', 'The title must be one non-empty line.')
@@ -117,6 +117,26 @@ export function editEntry(text, id, changes) {
   return { ok: true, changed: true, text: text.slice(0, entry.start) + raw + text.slice(entry.end) }
 }
 
+/**
+ * Wrap an edit so it refuses unless the entry still looks like the one the person was
+ * shown (a prompt deleted elsewhere can free its id for a different prompt).
+ * @param {string} id
+ * @param {{ title: string, created?: string, bodyLength: number } | undefined} expect
+ * @param {(text: string) => any} fn
+ */
+export function guarded(id, expect, fn) {
+  return text => {
+    if (expect) {
+      const e = parseVault(text).entries.find(x => x.id === id)
+      if (!e) return fail('not-found', `No prompt ${id} in the vault.`)
+      if (e.title !== expect.title || e.created !== expect.created || (e.body ?? '').length !== expect.bodyLength) {
+        return fail('stale', `${id} changed since the list was drawn. The list has been refreshed; look again.`)
+      }
+    }
+    return fn(text)
+  }
+}
+
 /** Remove one entry. Its id becomes free and the next added prompt takes the lowest free id. */
 export function deleteEntry(text, id) {
   const { error, entry } = find(text, id)
@@ -138,7 +158,7 @@ function canonical(v, name) {
 /** Rewrite the header `Projects:` line from `names` (removing it when empty). */
 function withHeaderProjects(text, names) {
   const eol = eolOf(text)
-  const startAt = text.indexOf(START_MARKER)
+  const startAt = text.search(/^<!-- PROMPTS START -->\r?$/m)
   const header = text.slice(0, startAt)
   const rest = text.slice(startAt)
   const line = /^Projects:[^\r\n]*(\r?\n)?/m
@@ -146,7 +166,7 @@ function withHeaderProjects(text, names) {
   if (names.length === 0) {
     nextHeader = header.replace(line, '').replace(/(\r?\n){3,}$/, eol + eol)
   } else if (line.test(header)) {
-    nextHeader = header.replace(/^Projects:[^\r\n]*/m, `Projects: ${names.join(', ')}`)
+    nextHeader = header.replace(/^Projects:[^\r\n]*/m, () => `Projects: ${names.join(', ')}`)
   } else {
     nextHeader = header + `Projects: ${names.join(', ')}${eol}${eol}`
   }
@@ -190,6 +210,14 @@ function rewriteEntries(text, v, projectFor) {
   return { text: out, touched }
 }
 
+/** The first entry in `project` that is not safe to rewrite, or undefined. */
+function unsafeIn(v, project) {
+  return v.entries.find(e => e.project === project && (e.error || e.legacy))
+}
+
+const unsafeProject = e =>
+  fail('unsafe-entry', `${e.id} is in that project but its fence is not trustworthy, so nothing was changed. Fix ${e.id} in prompts.md first.`)
+
 /** Create a project (it exists with no prompts until some are filed under it). */
 export function createProject(text, name) {
   if (typeof name !== 'string' || !isValidProjectName(name)) return fail('bad-project', PROJECT_RULE)
@@ -211,6 +239,8 @@ export function renameProject(text, from, to) {
   if (target === source) return { ok: true, changed: false, text }
   const clash = canonical(v, target)
   if (clash !== undefined && !same(clash, source)) return fail('project-exists', `There is already a project called "${clash}".`)
+  const unsafe = unsafeIn(v, source)
+  if (unsafe) return unsafeProject(unsafe)
   const rewritten = rewriteEntries(text, v, e => (e.project === source ? target : undefined))
   const out = v.header.projects.includes(source)
     ? withHeaderProjects(rewritten.text, v.header.projects.map(p => (p === source ? target : p)))
@@ -223,6 +253,8 @@ export function deleteProject(text, name) {
   const v = parseVault(text)
   const source = typeof name === 'string' ? canonical(v, name.trim()) : undefined
   if (source === undefined) return fail('project-not-found', `There is no project called "${String(name)}".`)
+  const unsafe = unsafeIn(v, source)
+  if (unsafe) return unsafeProject(unsafe)
   const rewritten = rewriteEntries(text, v, e => (e.project === source ? null : undefined))
   const out = v.header.projects.includes(source)
     ? withHeaderProjects(rewritten.text, v.header.projects.filter(p => p !== source))

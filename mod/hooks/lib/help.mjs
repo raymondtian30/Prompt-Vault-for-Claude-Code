@@ -17,7 +17,7 @@ export const FAQ = [
   },
   {
     q: 'What does "accepted" mean?',
-    a: 'Claude Code took the prompt and started a turn for it. It does not mean Claude has finished or understood it.',
+    a: 'Claude Code took the prompt and will start a turn for it as soon as Claude is free. It does not mean Claude has finished or understood it.',
   },
   {
     q: 'Why is Execute disabled?',
@@ -60,7 +60,7 @@ export const TROUBLESHOOTING = [
   },
   {
     q: 'The vault is reported missing.',
-    a: 'There is no prompts.md at the path /vault doctor shows. Run the skill\'s /prompt-vault once; it creates the folder and file without touching anything that exists.',
+    a: 'There is no prompts.md at the path /vault doctor shows. Press Create the vault in the menu (it never overwrites an existing file), or run the skill\'s /prompt-vault once.',
   },
   {
     q: 'A prompt says it cannot be run.',

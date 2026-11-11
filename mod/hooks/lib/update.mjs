@@ -6,7 +6,7 @@ export const RELEASES_URL = 'https://api.github.com/repos/raymondtian30/Prompt-V
 
 export const UPDATE_ARGV = [
   ['claude', 'plugin', 'marketplace', 'update', 'prompt-vault-for-claude-code'],
-  ['claude', 'plugin', 'update', 'prompt-vault-mod@prompt-vault-for-claude-code'],
+  ['claude', 'plugin', 'update', 'prompt-vault-mod@prompt-vault-for-claude-code', '--scope', 'user'],
 ]
 
 /** [major, minor, patch] from "v1.2.3" or "1.2.3"; null for anything else. */

@@ -29,9 +29,10 @@ function unsafeReason(entry) {
 
 /**
  * Ordered preconditions. Returns { ok: true, entry } or { ok: false, code, message }.
- * @param {{ vault: any, id: string, exec: any, source?: any }} a
+ * `expect` (title, created, bodyLength of the row the person clicked) guards against a reused id.
+ * @param {{ vault: any, id: string, exec: any, source?: any, expect?: { title: string, created?: string, bodyLength: number } }} a
  */
-export function precheck({ vault, id, exec, source }) {
+export function precheck({ vault, id, exec, source, expect }) {
   const fromPerson = source && (source.kind === 'press' || (source.kind === 'command' && source.origin?.kind === 'composer'))
   if (!fromPerson) {
     return { ok: false, code: 'bad-origin', message: 'Execute only runs from a button press or your own /vault command.' }
@@ -39,6 +40,9 @@ export function precheck({ vault, id, exec, source }) {
   if (!vault.ok) return { ok: false, code: 'vault-unreadable', message: vault.message }
   const entry = vault.entries.find(e => e.id === id)
   if (!entry) return { ok: false, code: 'not-found', message: `No prompt ${id} in the vault.` }
+  if (expect && (entry.title !== expect.title || entry.created !== expect.created || (entry.body ?? '').length !== expect.bodyLength)) {
+    return { ok: false, code: 'stale', message: `${id} has changed since the list was drawn. Refresh and look again.` }
+  }
   const why = unsafeReason(entry)
   if (why) {
     return { ok: false, code: 'unsafe-entry', message: `${id} cannot be run: ${why}. Fix it in prompts.md or re-save it.` }
@@ -54,11 +58,11 @@ export function precheck({ vault, id, exec, source }) {
 /**
  * Run one prompt. Success is reported only when submit resolves with text.
  * @param {object} deps
- * @param {{ id: string, source?: any }} req
+ * @param {{ id: string, source?: any, expect?: object }} req
  */
-export async function runPrompt(deps, { id, source }) {
+export async function runPrompt(deps, { id, source, expect }) {
   const vault = await deps.loadVault()
-  const pre = precheck({ vault, id, exec: await deps.getExec(), source })
+  const pre = precheck({ vault, id, exec: await deps.getExec(), source, expect })
   if (!pre.ok) return pre
   const entry = pre.entry
   const token = deps.newToken()
@@ -73,7 +77,7 @@ export async function runPrompt(deps, { id, source }) {
 
   let result
   try {
-    result = await deps.submit({ text: entry.body, asUser: deps.settings.submitAsUser })
+    result = await deps.submit(deps.settings.submitAsUser ? { text: entry.body, asUser: true } : { text: entry.body })
   } catch (err) {
     cancelTimer()
     const reason = `Claude Code did not take the prompt: ${String(err?.message ?? err)}`
@@ -89,7 +93,14 @@ export async function runPrompt(deps, { id, source }) {
     return { ok: false, code: 'refused', state: 'refused', message: result.drop }
   }
 
-  const changed = result?.text !== entry.body
+  if (typeof result?.text !== 'string') {
+    const reason = 'Claude Code answered without confirming it took the prompt.'
+    await deps.dispatch({ type: 'failed', token, reason })
+    note('failed')
+    return { ok: false, code: 'failed', state: 'failed', message: reason }
+  }
+
+  const changed = result.text !== entry.body
   await deps.dispatch({ type: 'accepted', token, changed })
   const state = changed ? 'accepted-changed' : 'accepted'
   note(state)

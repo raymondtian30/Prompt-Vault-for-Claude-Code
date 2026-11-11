@@ -20,7 +20,7 @@ test('grammar constants match what SKILL.md states, and the skill describes proj
   assert.ok(skill.includes(END_MARKER), 'end marker')
   assert.ok(skill.includes('Projects:'), 'header Projects line')
   assert.ok(/lowest unused ID/i.test(skill), 'lowest unused id rule')
-  assert.ok(!/never reused/i.test(skill), 'old never-reused rule must be gone')
+  assert.ok(!/never reused|never reuse|never be reused/i.test(skill), 'old never-reuse rule must be gone everywhere in the skill')
   assert.ok(!/Next ID counter/.test(skill.replace(/an old[^.]*Next ID counter[^.]*\./i, '')), 'no counter rule')
 })
 

@@ -214,3 +214,43 @@ test('renderEntry can use CRLF for its own lines and still round-trips the body 
   assert.ok(text.startsWith('## [ ] P0001: T\r\n- Project: Other\r\n'))
   assert.equal(parseVault(wrap(text)).entries[0].body, body)
 })
+
+// ---- final review fixes ----
+const plain = (id, body) =>
+  `## [ ] ${id}: T ${id}\n- Created: 2026-11-10\n- Status: pending\n\n\`\`\`text\n${body}\n\`\`\`\n\n---\n`
+
+test('an unclosed fence in the middle never swallows the next entry', () => {
+  const broken = '## [ ] P0001: Broken\n- Created: 2026-11-10\n- Status: pending\n\n```text\none\n\n---\n'
+  const v = parseVault(wrap(broken + plain('P0002', 'two') + plain('P0003', 'three')))
+  assert.deepEqual(v.entries.map(e => e.id), ['P0001', 'P0002', 'P0003'])
+  assert.equal(v.entries[0].error, 'unclosed-fence')
+  assert.equal(v.entries[1].body, 'two')
+  assert.equal(v.entries[2].body, 'three')
+  assert.ok(v.errors.some(x => x.code === 'unclosed-fence' && x.id === 'P0001'))
+})
+
+test('a fake heading inside a body is still fine when no fence run could have closed it', () => {
+  const v = parseVault(wrap(plain('P0001', 'a\n## [ ] P0009: fake\nb') + plain('P0002', 'two')))
+  assert.deepEqual(v.entries.map(e => [e.id, e.error]), [['P0001', undefined], ['P0002', undefined]])
+})
+
+test('the end of a body follows the real line ending before the closing fence', () => {
+  const crlfOpenLfBody = '## [ ] P0001: T\r\n- Created: x\r\n- Status: pending\r\n\r\n```text\r\nabc\nde\n```\r\n\r\n---\r\n'
+  assert.equal(parseVault(wrap(crlfOpenLfBody)).entries[0].body, 'abc\nde')
+  const lfOpenCrlfBody = '## [ ] P0001: T\n- Created: x\n- Status: pending\n\n```text\nabc\r\nde\r\n```\n\n---\n'
+  assert.equal(parseVault(wrap(lfOpenCrlfBody)).entries[0].body, 'abc\r\nde')
+  const emptyCrlf = '## [ ] P0001: T\r\n- Created: x\r\n- Status: pending\r\n\r\n```text\r\n```\r\n\r\n---\r\n'
+  assert.equal(parseVault(wrap(emptyCrlf)).entries[0].body, '')
+})
+
+test('titles, projects and the Projects line may contain U+2028 and U+2029 without losing the entry', () => {
+  const t = wrap('## [ ] P0001: Title more\n- Project: A B\n- Created: 2026-11-10\n- Status: pending\n\n```text\nx\n```\n\n---\n')
+  const e = parseVault(t).entries[0]
+  assert.deepEqual([e.id, e.title, e.project], ['P0001', 'Title more', 'A B'])
+  assert.deepEqual(parseVault('# DB\n\nProjects: A B, C\n\n<!-- PROMPTS START -->\n<!-- PROMPTS END -->\n').header.projects, ['A B', 'C'])
+})
+
+test('project names reject line separators too', () => {
+  assert.equal(isValidProjectName('a b'), false)
+  assert.equal(isValidProjectName('a b'), false)
+})

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseVault, renderEntry } from '../mod/hooks/lib/grammar.mjs'
-import { OPERATIONS, createHandlers, parseCommand, argumentHint } from '../mod/hooks/lib/registry.mjs'
+import { OPERATIONS, createHandlers, parseCommand, argumentHint, PERSON_ONLY } from '../mod/hooks/lib/registry.mjs'
 
 const mk = (id, over = {}) =>
   renderEntry({ id, done: false, title: 'Title ' + id, project: 'Claude Code', created: '2026-11-10', body: 'body of ' + id, ...over })
@@ -272,4 +272,32 @@ test('every skill command has a registry entry that mirrors it', () => {
   const skillCommands = ['overview', 'add', 'done', 'edit', 'search', 'delete', 'next', 'send', 'list', 'projects']
   const mirrored = new Set(OPERATIONS.map(o => o.skillEquivalent).filter(Boolean))
   for (const c of skillCommands) assert.ok(mirrored.has(c), c)
+})
+
+test('update only accepts nothing or "check"; a typo prints usage and installs nothing', async () => {
+  const seen = []
+  const ctx = { vault: V, update: async mode => (seen.push(mode), { ok: true, text: 'u' }) }
+  await handlers.update(ctx, '')
+  await handlers.update(ctx, 'CHECK')
+  for (const typo of ['chekc', 'check now', 'foo', 'apply']) {
+    const r = await handlers.update(ctx, typo)
+    assert.deepEqual([r.ok, r.text], [false, 'Usage: /vault update [check]'], typo)
+  }
+  assert.deepEqual(seen, ['apply', 'check'])
+})
+
+test('a project whose name starts with all, done or pending is a project, not a filter', async () => {
+  const v = vaultOf([mk('P0001', { project: 'Allocation' }), mk('P0002', { project: 'Done deals', done: true }), mk('P0003', { project: 'Pending work' })])
+  assert.deepEqual((await handlers.list({ vault: v }, 'Allocation')).data.map(e => e.id), ['P0001'])
+  assert.deepEqual((await handlers.list({ vault: v }, 'Done deals')).data.map(e => e.id), ['P0002'])
+  assert.deepEqual((await handlers.list({ vault: v }, 'pending Pending work')).data.map(e => e.id), ['P0003'])
+  assert.deepEqual((await handlers.list({ vault: v }, 'all Allocation')).data.map(e => e.id), ['P0001'])
+  assert.equal((await handlers.list({ vault: v }, 'pending')).data.length, 2)
+})
+
+test('every operation that changes the vault, runs a prompt or installs is person-only; reads are not', () => {
+  const changes = ['done', 'reopen', 'add', 'edit', 'delete', 'project', 'stop', 'run', 'load', 'update']
+  for (const id of changes) assert.ok(PERSON_ONLY.has(id), id)
+  for (const id of ['overview', 'list', 'search', 'next', 'send', 'projects', 'refresh', 'help', 'doctor']) assert.ok(!PERSON_ONLY.has(id), id)
+  assert.deepEqual([...PERSON_ONLY].sort(), changes.sort())
 })

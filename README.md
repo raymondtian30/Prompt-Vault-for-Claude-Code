@@ -40,7 +40,7 @@ Open `/config`, or run `claude plugin configure prompt-vault-mod@prompt-vault-fo
 
 Click **Prompt Vault**. The menu opens in a pane and the small launcher above the prompt box hides while the pane is open; close the pane (**Close**, or Esc) and the launcher returns. The menu offers:
 
-- **Browse prompts** — cards with the title, project and priority. **Run** sends the whole saved prompt to Claude Code. **Remove** asks first. Click a title to open the prompt. Search, All/Pending/Done filter, paging.
+- **Browse prompts** — cards with the title, project and priority. **Run** sends the whole saved prompt to Claude Code. **Remove** asks first. Click a title to open the prompt. Search (title, project, ID and the first 2,000 characters of each prompt; `/vault search` reads the whole text), All/Pending/Done filter, paging.
 - **Projects** — create, rename and delete projects, open one to see only its prompts, and add prompts straight into it.
 - **Run a prompt by ID** — type `P0001`, press Enter.
 - **Add a prompt** — project is optional; your text is stored exactly as typed, code fences included.
@@ -53,7 +53,7 @@ On a prompt's page: **Run this prompt**, a **Project** picker to move it, **Put 
 
 **IDs.** A new prompt takes the **lowest unused ID**, so if you delete `P0001`, the next prompt you add is `P0001`. (An ID you saw earlier can therefore point at a different prompt later.)
 
-**What Run reports.** "Accepted by Claude Code" appears only after Claude Code takes the prompt and starts a turn for it. It does not mean Claude finished or understood it. If another plugin changes the text on the way, it says so. If Claude Code refuses, you see its reason. Run is disabled while Claude is working (nothing is queued), and a second press during a run is ignored. Run never changes the saved prompt and never marks it done; **Mark done** is separate.
+**What Run reports.** "Accepted by Claude Code" appears only after Claude Code takes the prompt (it starts its turn as soon as Claude is free). It does not mean Claude finished or understood it. If another plugin changes the text on the way, it says so. If Claude Code refuses, you see its reason. Run is disabled while Claude is working (nothing is queued), and a second press during a run is ignored. Run never changes the saved prompt and never marks it done; **Mark done** is separate.
 
 ### `/vault` commands
 
@@ -149,9 +149,9 @@ Verified in a real VS Code session (Claude Code 2.1.322): the button draws above
 
 | Status | Feature |
 |---|---|
-| Implemented, automated tests | Button and menu; browse, search, filter, paging; projects (create, rename, delete, move prompts, add into one); lowest-free ID reuse; run and run by ID with accepted/refused/failed reporting; duplicate-run prevention; busy block; put in prompt box; done/pending; add; edit; remove; Help; every `/vault` command; guarded writes with backup; the fence rule; the launcher hiding while the pane is open; the update check and install flow (with fake GitHub and fake commands). |
+| Implemented, automated tests | Button and menu; browse, search, filter, paging; projects (create, rename, delete, move prompts, add into one); lowest-free ID reuse; run and run by ID with accepted/refused/failed reporting; duplicate-run prevention; busy block; put in prompt box; done/pending; add; edit; remove; Help; every `/vault` command handler (against a stand-in for Claude Code); guarded writes with backup; refusal of `/vault` commands that did not come from you typing them; the fence rule; the launcher hiding while the pane is open; the update check and install flow (with fake GitHub and fake commands). |
 | Implemented, **not yet checked live by a person** | Each menu action against a real vault, projects on the real screen, Stop the turn, put in prompt box, **`/vault update` against real GitHub and the real `claude` CLI**, and the layout at your pane width. The checklist is [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md). |
-| Partial | Layout was tuned without screenshots of every surface. Terminal and desktop are covered by automated mounts, not by eyes. `/vault update` depends on the surface letting a mod run commands (documented as CLI-only); otherwise it prints the two commands. |
+| Partial | Layout was tuned without screenshots of every surface. Terminal and desktop are covered by automated mounts of the menu and launcher, not by eyes. `/vault update` depends on the surface letting a mod run commands (documented as CLI-only); otherwise it prints the two commands. |
 | Not supported | Queuing a run behind a busy Claude (Run waits for idle); `@file` mentions and pasted images in a run (use *Put it in the prompt box*); editing a prompt over 100,000 characters in the menu (edit the file); Windows paths and `CLAUDE_CONFIG_DIR`; locking against another program writing `prompts.md` at the same moment; updating to a specific release rather than the latest. |
 
 ## Known limitations

@@ -10,7 +10,7 @@
 - **Help** is generated from one operation registry; tests fail if the registry, `SKILL.md`, the READMEs or the manifest settings drift apart.
 - **Fix (skill and template): the fence rule.** A prompt containing a triple-backtick line used to close its own entry early, silently truncating it. Prompts now sit in a fence one backtick longer than the longest run inside them. Entries cut short by the old behavior are flagged read-only instead of guessed.
 - **Guarded writes** by the mod: re-read and compare before writing, change only the touched entry (or, for a project rename or delete, only the entries in it), `prompts.md.bak` first, verify after.
-- Tests: 160+ logic tests (`npm test`), 17 mod-level tests (`claude plugin test mod`), CI job for the logic tests.
+- Tests: 160+ logic tests (`npm test`), 23 mod-level tests (`claude plugin test mod`), CI job for the logic tests.
 - `install.sh` pins v1.1.0; `uninstall.sh` points at the mod's uninstall command.
 - Known limits: early-access mod API, not atomic against other programs, 34-column pane in VS Code, `/vault update` untested against real GitHub. See the README.
 

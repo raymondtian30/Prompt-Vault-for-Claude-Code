@@ -86,7 +86,7 @@ test('a 100,000-character prompt is submitted whole', async () => {
 test('the asUser setting is passed through', async () => {
   const h = harness({ settings: { submitAsUser: false } })
   await runPrompt(h.deps, { id: 'P0001', source: press })
-  assert.equal(h.out.submits[0].asUser, false)
+  assert.ok(!('asUser' in h.out.submits[0]), 'asUser is only ever passed as true')
 })
 
 test('text changed by another plugin is accepted-changed, never plain accepted', async () => {
@@ -253,4 +253,27 @@ test('now may be async: the slot records a number, not a promise', async () => {
   const h = harness({ now: async () => 1234 })
   await runPrompt(h.deps, { id: 'P0001', source: press })
   assert.equal(h.exec().slot.startedAt, 1234)
+})
+
+test('a resolution without text is never reported as accepted', async () => {
+  for (const answer of [undefined, {}, null, { text: 5 }]) {
+    const h = harness({ submit: async () => answer })
+    const r = await runPrompt(h.deps, { id: 'P0001', source: press })
+    assert.deepEqual([r.ok, r.state], [false, 'failed'], JSON.stringify(answer))
+    assert.equal(h.exec().slot, null)
+    assert.equal(h.exec().run.state, 'failed')
+  }
+})
+
+test('Run refuses when the entry no longer looks like the row that was shown (a reused id)', async () => {
+  const h = harness()
+  const entry = (await h.deps.loadVault()).entries.find(e => e.id === 'P0001')
+  const expect = { title: entry.title, created: entry.created, bodyLength: entry.body.length }
+  const ok = await runPrompt(h.deps, { id: 'P0001', source: press, expect })
+  assert.equal(ok.ok, true)
+  const h2 = harness()
+  const stale = await runPrompt(h2.deps, { id: 'P0001', source: press, expect: { ...expect, title: 'An older prompt that had this id' } })
+  assert.deepEqual([stale.ok, stale.code], [false, 'stale'])
+  assert.match(stale.message, /changed/)
+  assert.equal(h2.out.submits.length, 0)
 })

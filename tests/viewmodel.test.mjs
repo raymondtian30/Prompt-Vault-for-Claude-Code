@@ -93,7 +93,7 @@ test('runLine says exactly what happened and nothing more', () => {
   assert.equal(runLine(null), null)
   assert.equal(runLine({ state: 'sending', id: 'P0003' }), 'Sending P0003…')
   assert.match(runLine({ state: 'sending', id: 'P0003', slow: true }), /Still waiting for Claude Code\. P0003 has not been accepted yet\./)
-  assert.equal(runLine({ state: 'accepted', id: 'P0003' }), 'P0003 accepted by Claude Code. Its turn started.')
+  assert.equal(runLine({ state: 'accepted', id: 'P0003' }), 'P0003 accepted by Claude Code.')
   assert.equal(runLine({ state: 'accepted', id: 'P0003', finished: true }), 'P0003 accepted by Claude Code. Its turn has finished.')
   assert.match(runLine({ state: 'accepted-changed', id: 'P0003' }), /accepted, but another plugin changed the text/)
   assert.equal(runLine({ state: 'refused', id: 'P0003', reason: 'blocked' }), 'P0003 refused: blocked')

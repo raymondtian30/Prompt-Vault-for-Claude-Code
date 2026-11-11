@@ -48,8 +48,12 @@ function RunLine(UI: any, exec: any, id: string | null, actions: any) {
   return (
     <Box flexDirection="column">
       <Text color={bad ? 'error' : good ? 'success' : run.slow ? 'warning' : undefined}>{line}</Text>
-      {run.state === 'sending' && run.slow && (
-        <Button key="reset" label="Reset (it may still start later)" onPress={actions.reset} />
+      {exec.slot && (run.slow || !exec.turn.running) && (
+        <Button
+          key="reset"
+          label={run.state === 'sending' ? 'Reset (it may still start later)' : 'Clear (no turn is running)'}
+          onPress={actions.reset}
+        />
       )}
     </Box>
   )
@@ -83,6 +87,7 @@ function Menu(UI: any, d: any, a: any) {
         <Text dimColor>{rule(d.columns)}</Text>
       </Box>
       {idx && !idx.ok && <Text color="error">{idx.message}</Text>}
+      {idx && !idx.ok && idx.error === 'missing' && <Button key="m-create" variant="primary" label="Create the vault" onPress={a.createVault} />}
       {RunLine(UI, d.exec, null, a)}
       <Box flexDirection="column" gap={1}>
         <Button key="m-browse" variant="primary" label="Browse prompts" onPress={a.openList} />
@@ -343,13 +348,14 @@ function Form(UI: any, d: any, a: any) {
   const { view } = d
   const editing = view.formMode === 'edit'
   const projects = [{ value: '', label: 'No project' }, ...projectsOf(d).map((p: any) => ({ value: p.name, label: truncate(p.name, 28) }))]
+  const projectValue = projects.some(o => o.value === view.seed.project) ? view.seed.project : ''
   const pris = [{ value: '', label: 'No priority' }, ...PRIORITIES.map(p => ({ value: p, label: p }))]
   return (
     <Box flexDirection="column" gap={1}>
       {Header(UI, d, editing ? `Edit ${view.formId}` : 'Add a prompt', { key: 'f-back', onPress: a.cancelForm })}
       <Box flexDirection="column">
         <Text bold>Project (optional)</Text>
-        <Select key="f-project" options={projects} value={view.seed.project} onSelect={(v: string) => a.draftSet('project', v)} />
+        <Select key="f-project" options={projects} value={projectValue} onSelect={(v: string) => a.draftSet('project', v)} />
         <Text dimColor>Make projects under Projects on the main menu.</Text>
       </Box>
       <Box flexDirection="column">

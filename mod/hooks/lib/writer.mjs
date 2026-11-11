@@ -29,6 +29,7 @@ function intact(oldVault, newText, touched, added) {
     if (touched.has(e.id)) continue
     if (!next.entries.some(x => x.id === e.id && x.raw === e.raw)) return false
   }
+  if (added !== undefined && !next.entries.some(x => x.id === added)) return false
   return next.entries.filter(x => !oldVault.entries.some(o => o.id === x.id)).every(x => x.id === added)
 }
 

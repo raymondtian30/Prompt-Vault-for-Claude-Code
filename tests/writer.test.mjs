@@ -168,3 +168,11 @@ test('an edit that also changes a prompt it did not name is refused', async () =
   assert.deepEqual([r.ok, r.error], [false, 'integrity'])
   assert.equal(fs.writes.length, 0)
 })
+
+test('a new entry that does not parse back is refused before any write', async () => {
+  const fs = memfs()
+  const invisible = t => ({ ok: true, changed: true, id: 'P0009', text: t.replace('<!-- PROMPTS END -->', 'garbage\n<!-- PROMPTS END -->') })
+  const r = await mutateVault({ fs, path: P }, invisible, {})
+  assert.deepEqual([r.ok, r.error], [false, 'integrity'])
+  assert.equal(fs.writes.length, 0)
+})

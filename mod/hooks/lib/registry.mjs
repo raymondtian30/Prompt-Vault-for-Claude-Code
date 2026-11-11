@@ -11,6 +11,9 @@ import { setDone, addEntry, editEntry, deleteEntry, createProject, renameProject
 
 const op = o => Object.freeze(o)
 
+/** Operations that change the vault, run a prompt, fill the prompt box or install: only the person may start them. */
+export const PERSON_ONLY = new Set(['done', 'reopen', 'add', 'edit', 'delete', 'project', 'stop', 'run', 'load', 'update'])
+
 export const OPERATIONS = Object.freeze([
   op({
     id: 'overview', name: 'overview', syntax: '/vault overview',
@@ -221,7 +224,10 @@ export function createHandlers() {
     async list(ctx, args) {
       const b = bad(ctx)
       if (b) return b
-      const m = /^(pending|done|all)?\s*([\s\S]*)$/i.exec(args.trim())
+      const whole = args.trim()
+      const named = listProjects(ctx.vault.header, ctx.vault.entries).projects.some(p => p.name.toLowerCase() === whole.toLowerCase())
+      // An exact project name wins over reading its first word as a filter ("Done deals").
+      const m = named ? [whole, undefined, whole] : /^(?:(pending|done|all)(?:\s+|$))?([\s\S]*)$/i.exec(whole)
       const filter = (m[1] ?? 'all').toLowerCase()
       const projArg = m[2].trim()
       let es = ctx.vault.entries.filter(e => (filter === 'pending' ? !e.done : filter === 'done' ? e.done : true))
@@ -370,7 +376,9 @@ export function createHandlers() {
     },
 
     async update(ctx, args) {
-      return ctx.update(args.trim().toLowerCase() === 'check' ? 'check' : 'apply')
+      const a = args.trim().toLowerCase()
+      if (a !== '' && a !== 'check') return { ok: false, text: 'Usage: /vault update [check]' }
+      return ctx.update(a === 'check' ? 'check' : 'apply')
     },
 
     async help(ctx, args) {

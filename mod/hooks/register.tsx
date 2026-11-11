@@ -7,11 +7,11 @@ import type { Register } from 'claude-code'
 import { PaneScreen, Launcher } from './ui/views.tsx'
 import { initialExec, reduce } from './lib/runstate.mjs'
 import { runPrompt } from './lib/execute.mjs'
-import { loadVault, resolveVaultPath } from './lib/vault.mjs'
+import { loadVault, resolveVaultPath, createVault } from './lib/vault.mjs'
 import { mutateVault, createWriteQueue } from './lib/writer.mjs'
-import { setDone, addEntry, editEntry, deleteEntry, createProject, renameProject, deleteProject } from './lib/edit.mjs'
+import { setDone, addEntry, editEntry, deleteEntry, createProject, renameProject, deleteProject, guarded } from './lib/edit.mjs'
 import { runUpdate } from './lib/update.mjs'
-import { createHandlers, parseCommand, argumentHint } from './lib/registry.mjs'
+import { createHandlers, parseCommand, argumentHint, PERSON_ONLY } from './lib/registry.mjs'
 import { lightIndex, lightEntry, previewBody, runLine } from './lib/viewmodel.mjs'
 import { MOD_VERSION } from './lib/config.mjs'
 
@@ -130,15 +130,25 @@ function execDeps($: any, options: any) {
 async function afterRun($: any, r: any) {
   if (r.ok) {
     const s = await read($, exec)
-    $.ui.status(`Prompt Vault: ${runLine(s.run)}`)
+    const line = runLine(s.run)
+    if (line) $.ui.status(`Prompt Vault: ${line}`)
     $.ui.toast(r.state === 'accepted' ? `${r.id} accepted by Claude Code` : `${r.id} accepted, text changed by another plugin`)
   } else {
     $.ui.toast(r.message)
   }
 }
 
-async function pressRun($: any, options: any, id: string) {
-  const r: any = await runPrompt(execDeps($, options), { id, source: { kind: 'press' } })
+/** What the pane last showed for `id`, so an action can refuse if the prompt behind that id changed. */
+async function expectOf($: any, id: string) {
+  const idx: any = await read($, index)
+  const row = idx && idx.ok ? idx.entries.find((e: any) => e.id === id) : undefined
+  return row ? { title: row.title, created: row.created, bodyLength: row.bodyLength } : undefined
+}
+
+async function pressRun($: any, options: any, id: string, fromRow: boolean) {
+  const expect = fromRow ? await expectOf($, id) : undefined
+  const r: any = await runPrompt(execDeps($, options), { id, source: { kind: 'press' }, expect })
+  if (r.code === 'stale') await refreshIndex($, options)
   if (!r.ok && !r.state) await setView($, { notice: r.message })
   await afterRun($, r)
   return r
@@ -188,7 +198,10 @@ function updateDeps($: any) {
   return {
     currentVersion: MOD_VERSION,
     fetchRelease: (url: string) => $.http.fetch(url, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'prompt-vault-mod' } }),
-    run: (argv: string[]) => $.process.run(argv, { timeoutMs: 120000 }),
+    run: async (argv: string[]) => {
+      const home = await $.env.get('HOME')
+      return $.process.run(argv, home ? { cwd: home, timeoutMs: 120000 } : { timeoutMs: 120000 })
+    },
   }
 }
 
@@ -247,6 +260,9 @@ async function runCommand($: any, options: any, e: any) {
   }
   const parsed: any = parseCommand(e.args)
   if (parsed.error) return { text: `Unknown /vault command "${parsed.input}". Try: ${parsed.known.join(', ')}.` }
+  if (PERSON_ONLY.has(parsed.op) && !(e.origin && e.origin.kind === 'composer')) {
+    return { text: 'That /vault command only runs when you type it yourself.' }
+  }
   const v = await readVault($, options)
   const nowMs = await $.clock.now()
   const ctx = {
@@ -303,6 +319,10 @@ async function openForm($: any, mode: string, id: string | null, seed: any) {
 async function saveForm($: any, options: any) {
   const f: any = await read($, form)
   const v: any = await read($, view)
+  const idx: any = await read($, index)
+  if (f.project && idx && idx.ok && !idx.projects.some((p: any) => p.name === f.project)) {
+    return setView($, { formError: 'That project no longer exists. Choose another.' })
+  }
   if (v.formMode === 'add') {
     const created = todayOf(await $.clock.now())
     const r = await mutate(
@@ -319,7 +339,7 @@ async function saveForm($: any, options: any) {
   const changes: any = { title: f.title, body: f.body }
   changes.project = f.project === '' ? null : f.project
   changes.priority = f.priority === '' ? null : f.priority
-  const r = await mutate($, options, (t: string) => editEntry(t, id, changes), { touched: id })
+  const r = await mutate($, options, guarded(id, await expectOf($, id), (t: string) => editEntry(t, id, changes)), { touched: id })
   if (!r.ok) return setView($, { formError: r.message })
   return setView($, { screen: 'detail', formError: null })
 }
@@ -336,16 +356,16 @@ async function saveProjectForm($: any, options: any, typed?: string) {
     {},
   )
   if (!r.ok) return setView($, { projectError: r.message })
-  return setView($, { screen: 'projects', projectError: null, notice: renaming ? `Renamed to "${name}".` : `Created project "${name}".` })
+  return setView($, { screen: 'projects', project: '', projectError: null, notice: renaming ? `Renamed to "${name}".` : `Created project "${name}".` })
 }
 
 function makeActions($: any, options: any) {
   const go = (patch: any) => setView($, patch)
   const raw: Record<string, (...args: any[]) => any> = {
-    openMenu: () => go({ screen: 'menu', notice: null, pendingDelete: null, pendingStop: false }),
+    openMenu: () => go({ screen: 'menu', project: '', notice: null, pendingDelete: null, pendingStop: false }),
     openList: async () => {
       await refreshIndex($, options)
-      await go({ screen: 'list', notice: null, pendingDelete: null, pendingStop: false })
+      await go({ screen: 'list', project: '', notice: null, pendingDelete: null, pendingStop: false })
     },
     setQuery: (q: string) => go({ query: q, page: 0 }),
     setFilter: (f: string) => go({ filter: f, page: 0 }),
@@ -372,16 +392,16 @@ function makeActions($: any, options: any) {
       await refreshIndex($, options)
       await go({ notice: 'Vault re-read.' })
     },
-    run: (id: string) => pressRun($, options, id),
+    run: (id: string) => pressRun($, options, id, true),
     runById: async (text: string | null) => {
       const typed = text !== null ? text : (await read($, form)).runId
       const id = String(typed ?? '').trim().toUpperCase()
       if (id === '') return go({ notice: 'Type a prompt ID such as P0001.' })
-      return pressRun($, options, id)
+      return pressRun($, options, id, false)
     },
     openProjects: async () => {
       await refreshIndex($, options)
-      await go({ screen: 'projects', notice: null, pendingProjectDelete: null })
+      await go({ screen: 'projects', project: '', notice: null, pendingProjectDelete: null })
     },
     openProject: async (name: string) => {
       await refreshIndex($, options)
@@ -400,10 +420,10 @@ function makeActions($: any, options: any) {
     cancelDeleteProject: () => go({ pendingProjectDelete: null }),
     confirmDeleteProject: async (name: string) => {
       const r: any = await mutate($, options, (t: string) => deleteProject(t, name), {})
-      await go({ pendingProjectDelete: null, notice: r.ok ? `Deleted project "${name}".` : r.message })
+      await go({ pendingProjectDelete: null, project: '', notice: r.ok ? `Deleted project "${name}".` : r.message })
     },
     moveTo: async (id: string, project: string) => {
-      const r: any = await mutate($, options, (t: string) => editEntry(t, id, { project: project === '' ? null : project }), { touched: id })
+      const r: any = await mutate($, options, guarded(id, await expectOf($, id), (t: string) => editEntry(t, id, { project: project === '' ? null : project })), { touched: id })
       if (!r.ok) await go({ notice: r.message })
     },
     checkUpdate: () => updateCmd($, 'check', { kind: 'press' }),
@@ -413,13 +433,13 @@ function makeActions($: any, options: any) {
       await go({ notice: r.text })
     },
     toggleDone: async (id: string, done: boolean) => {
-      const r = await mutate($, options, (t: string) => setDone(t, id, done), { touched: id })
+      const r = await mutate($, options, guarded(id, await expectOf($, id), (t: string) => setDone(t, id, done)), { touched: id })
       if (!r.ok) await go({ notice: r.message })
     },
     askDelete: (id: string) => go({ pendingDelete: id }),
     cancelDelete: () => go({ pendingDelete: null }),
     confirmDelete: async (id: string) => {
-      const r = await mutate($, options, (t: string) => deleteEntry(t, id), { touched: id })
+      const r = await mutate($, options, guarded(id, await expectOf($, id), (t: string) => deleteEntry(t, id)), { touched: id })
       if (r.ok) await go({ pendingDelete: null, screen: 'list', selectedId: null, notice: `Deleted ${id}.` })
       else await go({ pendingDelete: null, notice: r.message })
     },
@@ -435,6 +455,13 @@ function makeActions($: any, options: any) {
     cancelForm: async () => {
       const v: any = await read($, view)
       await go({ screen: v.formMode === 'edit' ? 'detail' : v.project === '' ? 'menu' : 'list', formError: null })
+    },
+    createVault: async () => {
+      const p: any = await vaultPath($, options)
+      if (!p.ok) return go({ notice: p.message })
+      const r: any = await createVault(fsOf($), p.path)
+      await refreshIndex($, options)
+      await go({ notice: r.ok ? 'Created the vault. Add your first prompt from the menu.' : r.message })
     },
     clearNotice: () => go({ notice: null }),
     toggle: () => togglePane($, options),
@@ -496,10 +523,13 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const v: any = await read($, view)
+    // A form is not redrawn when a turn starts or ends, so typing is never reset under the person.
+    const quiet = v.screen === 'form' || v.screen === 'projectform'
     const d = {
       columns: e.props.bodyColumns,
-      exec: await read($, exec),
-      view: await read($, view),
+      exec: quiet ? initialExec() : await read($, exec),
+      view: v,
       index: await read($, index),
       detail: await read($, detail),
       pageSize: Number(options.pageSize) > 0 ? Number(options.pageSize) : 5,

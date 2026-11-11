@@ -8,9 +8,9 @@ export const START_MARKER = '<!-- PROMPTS START -->'
 export const END_MARKER = '<!-- PROMPTS END -->'
 export const MIN_FENCE = 3
 
-const HEADING_RE = /^## \[( |x)\] (P\d{4,}): (.*)$/
-const PROJECTS_RE = /^Projects:[ \t]*(.*)$/
-const META_RE = /^- ([^:]+):\s?(.*)$/
+const HEADING_RE = /^## \[( |x)\] (P\d{4,}): ([^\r\n]*)$/
+const PROJECTS_RE = /^Projects:[ \t]*([^\r\n]*)$/
+const META_RE = /^- ([^:\r\n]+):\s?([^\r\n]*)$/
 const OPEN_RE = /^(`{3,})([^`]*)$/
 const BARE_FENCE_RE = /^`{3,}\s*$/
 
@@ -146,10 +146,23 @@ function parseEntry(text, lines, i, h) {
     return finish(b, { error: 'unclosed-fence' })
   }
 
-  const crlf = lines[j].hadCR
+  // A body written under the fence rule never holds a backtick run as long as its fence.
+  // If the region up to the closing fence holds both such a run and another entry's
+  // heading, the real closing fence is missing and this "closer" belongs to a later entry.
+  const region = lines.slice(j + 1, k)
+  const runLine = '`'.repeat(n)
+  if (region.some(l => HEADING_RE.test(l.text)) && region.some(l => l.text.startsWith(runLine))) {
+    let b = j + 1
+    while (b < lines.length && !isBoundary(lines[b])) b++
+    return finish(b, { error: 'unclosed-fence' })
+  }
+
+  // The body ends before the line terminator that sits right before the closing fence.
   const sliceBody = (openLine, closeLine) => {
     const bodyStart = lines[openLine].next
-    const bodyEnd = lines[closeLine].start - (crlf ? 2 : 1)
+    const closeStart = lines[closeLine].start
+    const cut = text[closeStart - 2] === '\r' && text[closeStart - 1] === '\n' ? 2 : 1
+    const bodyEnd = closeStart - cut
     return bodyEnd < bodyStart ? '' : text.slice(bodyStart, bodyEnd)
   }
 
@@ -207,7 +220,7 @@ export function renderEntry(e) {
 
 /** A project name is one non-empty line without commas (the header list is comma separated). */
 export function isValidProjectName(name) {
-  return typeof name === 'string' && name.trim() !== '' && name.trim().length <= PROJECT_NAME_MAX && !/[,\r\n]/.test(name)
+  return typeof name === 'string' && name.trim() !== '' && name.trim().length <= PROJECT_NAME_MAX && !/[,\r\n\u2028\u2029]/.test(name)
 }
 
 /**

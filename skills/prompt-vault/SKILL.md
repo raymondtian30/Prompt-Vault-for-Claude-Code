@@ -212,7 +212,7 @@ command:
   explicitly requested, via `edit`.
 - Never silently drop existing prompts when adding new ones — always read
   current content before appending/editing, use Edit for targeted changes,
-  and never reuse an ID.
+  and give a new prompt the lowest unused ID (never one that is in use).
 - If `prompts.md` is somehow missing or corrupted when this skill is invoked,
   say so and offer to recreate the structure (losing nothing you can still
   read — try to salvage any readable entries first) rather than silently

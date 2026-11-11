@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseVault, renderEntry, listProjects } from '../mod/hooks/lib/grammar.mjs'
-import { setDone, addEntry, editEntry, deleteEntry, createProject, renameProject, deleteProject } from '../mod/hooks/lib/edit.mjs'
+import { setDone, addEntry, editEntry, deleteEntry, createProject, renameProject, deleteProject, guarded } from '../mod/hooks/lib/edit.mjs'
 
 const mk = (id, over = {}) =>
   renderEntry({ id, done: false, title: 'T ' + id, project: 'Alpha', created: '2026-11-09', body: 'body ' + id, ...over })
@@ -212,4 +212,61 @@ test('deleting an empty header project only edits the header', () => {
   const r = deleteProject(start, 'Empty')
   assert.deepEqual([r.ok, r.unfiled, r.touched], [true, 0, []])
   for (const id of ['P0001', 'P0002', 'P0003']) assert.equal(rawOf(r.text, id), rawOf(TEXT, id))
+})
+
+// ---- final review fixes ----
+const BROKEN = '## [ ] P0001: Broken\n- Project: Alpha\n- Created: 2026-11-10\n- Status: pending\n\n```text\none\n\n---\n'
+const SOLID = id => `## [ ] ${id}: T ${id}\n- Project: Alpha\n- Created: 2026-11-10\n- Status: pending\n\n\`\`\`text\nbody ${id}\n\`\`\`\n\n---\n`
+
+test('an entry with a missing fence cannot be deleted, edited or moved, and the next entry is untouched', () => {
+  const text = doc([BROKEN, SOLID('P0002'), SOLID('P0003')])
+  assert.equal(deleteEntry(text, 'P0001').error, 'unsafe-entry')
+  assert.equal(editEntry(text, 'P0001', { title: 'x' }).error, 'unsafe-entry')
+  const del = deleteEntry(text, 'P0002')
+  assert.deepEqual(parseVault(del.text).entries.map(e => e.id), ['P0001', 'P0003'])
+  assert.equal(rawOf(del.text, 'P0003'), rawOf(text, 'P0003'))
+})
+
+test('project names with $ patterns are written exactly as typed', () => {
+  for (const name of ['x$`y', "a$'b", 'c$&d', 'e$1f', '$$']) {
+    const made = createProject(TEXT, name)
+    assert.equal(made.ok, true, name)
+    assert.deepEqual(parseVault(made.text).header.projects, [name], name)
+    assert.equal(made.text.slice(made.text.indexOf('<!-- PROMPTS START -->')), TEXT.slice(TEXT.indexOf('<!-- PROMPTS START -->')))
+    const renamed = renameProject(made.text, name, 'z' + name)
+    assert.deepEqual(parseVault(renamed.text).header.projects, ['z' + name], name)
+  }
+})
+
+test('rename and delete refuse when an entry in the project is not safe to change, writing nothing', () => {
+  const text = doc([BROKEN, SOLID('P0002')])
+  for (const r of [renameProject(text, 'Alpha', 'Beta'), deleteProject(text, 'Alpha')]) {
+    assert.deepEqual([r.ok, r.error], [false, 'unsafe-entry'])
+    assert.match(r.message, /P0001/)
+  }
+})
+
+test('the Projects line goes above the real START line, not into prose that mentions the marker', () => {
+  const t = '# DB\n\nPut entries after <!-- PROMPTS START --> below.\n\n<!-- PROMPTS START -->\n' + SOLID('P0001') + '<!-- PROMPTS END -->\n'
+  const r = createProject(t, 'Web')
+  assert.ok(r.text.includes('Put entries after <!-- PROMPTS START --> below.\n'))
+  assert.deepEqual(parseVault(r.text).header.projects, ['Web'])
+  assert.equal(parseVault(r.text).entries.length, 1)
+})
+
+test('titles with line separators are refused, so an entry can never vanish on re-parse', () => {
+  assert.equal(addEntry(TEXT, { ...NEW, title: 'a b' }).error, 'bad-title')
+  assert.equal(addEntry(TEXT, { ...NEW, title: 'a b' }).error, 'bad-title')
+  assert.equal(editEntry(TEXT, 'P0001', { title: 'a b' }).error, 'bad-title')
+  assert.equal(addEntry(TEXT, { ...NEW, project: 'a b' }).error, 'bad-project')
+})
+
+test('guarded refuses an edit when the entry no longer looks like the one that was shown', () => {
+  const shown = { title: 'T P0001', created: '2026-11-09', bodyLength: 'body P0001'.length }
+  assert.equal(guarded('P0001', shown, t => deleteEntry(t, 'P0001'))(TEXT).ok, true)
+  const stale = guarded('P0001', { ...shown, title: 'Something else' }, t => deleteEntry(t, 'P0001'))(TEXT)
+  assert.deepEqual([stale.ok, stale.error], [false, 'stale'])
+  assert.match(stale.message, /P0001 changed/)
+  assert.equal(guarded('P0001', undefined, t => setDone(t, 'P0001', true))(TEXT).ok, true)
+  assert.equal(guarded('P0099', shown, t => deleteEntry(t, 'P0099'))(TEXT).error, 'not-found')
 })

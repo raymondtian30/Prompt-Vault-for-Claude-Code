@@ -71,7 +71,7 @@ export function runLine(run) {
         ? `Still waiting for Claude Code. ${run.id} has not been accepted yet.`
         : `Sending ${run.id}…`
     case 'accepted':
-      return `${run.id} accepted by Claude Code. Its turn ${run.finished ? 'has finished' : 'started'}.`
+      return `${run.id} accepted by Claude Code.${run.finished ? ' Its turn has finished.' : ''}`
     case 'accepted-changed':
       return `${run.id} accepted, but another plugin changed the text before it was sent.`
     case 'refused':

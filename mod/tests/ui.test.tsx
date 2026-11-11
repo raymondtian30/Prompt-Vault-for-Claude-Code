@@ -4,6 +4,7 @@
 import { expect, test, mock } from 'claude-code/testing'
 
 import { renderEntry } from '../hooks/lib/grammar.mjs'
+import { SEED } from '../hooks/lib/vault.mjs'
 
 const PLUGIN = 'prompt-vault-mod'
 const VAULT = '/h/.claude/prompt-vault/prompts.md'
@@ -259,7 +260,7 @@ test('Check for updates reports a newer release, and Install runs the two fixed 
   await ui.press({ key: 'u-install' })
   expect(w.ran).toEqual([
     ['claude', 'plugin', 'marketplace', 'update', 'prompt-vault-for-claude-code'],
-    ['claude', 'plugin', 'update', 'prompt-vault-mod@prompt-vault-for-claude-code'],
+    ['claude', 'plugin', 'update', 'prompt-vault-mod@prompt-vault-for-claude-code', '--scope', 'user'],
   ])
   expect(await ui.find({ type: 'Text', text: /Updated Prompt Vault to 9\.9\.9/ })).toBeDefined()
   await ui.unmount()
@@ -300,4 +301,95 @@ test('a missing vault is reported in the menu instead of an empty list', async (
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
   expect(await ui.find({ type: 'Text', text: /does not exist/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('a run the engine accepted but that never starts a turn can be cleared, and Run comes back', async ($, on) => {
+  const w = world($, on)
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await ui.press({ key: 'm-browse' })
+  await ui.press({ key: 'run-P0001' })
+  expect(w.submitted).toHaveLength(1)
+  expect(await ui.find({ type: 'Button', key: 'run-P0002' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', key: 'reset' })).toBeDefined()
+  await ui.press({ key: 'reset' })
+  expect(await ui.find({ type: 'Button', key: 'run-P0002' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a missing vault offers Create the vault, which writes the seed and never overwrites', async ($, on) => {
+  const w = world($, on)
+  delete w.files[VAULT]
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(await ui.find({ type: 'Button', key: 'm-create' })).toBeDefined()
+  await ui.press({ key: 'm-create' })
+  expect(w.files[VAULT]).toBe(SEED)
+  expect(await ui.find({ type: 'Button', key: 'm-create' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('after a project is renamed, Add does not bring the old project name back', async ($, on) => {
+  const w = world($, on)
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await ui.press({ key: 'm-projects' })
+  await ui.press({ key: 'popen-Alpha' })
+  await ui.press({ key: 'l-back' })
+  await ui.press({ key: 'pren-Alpha' })
+  await ui.input({ key: 'pf-name', text: 'Gamma' })
+  await ui.press({ key: 'pr-back' })
+  await ui.press({ key: 'm-add' })
+  const select = await ui.find({ type: 'Select', key: 'f-project' })
+  expect(select?.props.value).toBe('')
+  await ui.input({ key: 'f-title', text: 'Fresh' })
+  await ui.input({ key: 'f-body', text: 'text' })
+  await ui.press({ key: 'f-save' })
+  expect(w.files[VAULT]).not.toContain('Alpha')
+  await ui.unmount()
+})
+
+const replaceP0001 = (w: any) => {
+  // Another program replaces P0001 with a different prompt that took the same id.
+  w.files[VAULT] = w.files[VAULT].replace('Title P0001', 'A different prompt').replace('body of P0001', 'other text')
+  w.mtime += 10
+}
+
+test('Run on a row that no longer matches the vault is refused, and the list is refreshed', async ($, on) => {
+  const w = world($, on)
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await ui.press({ key: 'm-browse' })
+  replaceP0001(w)
+  await ui.press({ key: 'run-P0001' })
+  expect(w.submitted).toHaveLength(0)
+  expect(await ui.find({ type: 'Text', text: /has changed since the list was drawn/ })).toBeDefined()
+  expect((await ui.find({ type: 'Button', key: 'open-P0001' }))?.text).toContain('A different prompt')
+  await ui.unmount()
+})
+
+test('Remove on a row that no longer matches the vault is refused and deletes nothing', async ($, on) => {
+  const w = world($, on)
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await ui.press({ key: 'm-browse' })
+  replaceP0001(w)
+  await ui.press({ key: 'del-P0001' })
+  await ui.press({ key: 'del-yes-P0001' })
+  expect(w.files[VAULT]).toContain('A different prompt')
+  expect(w.files[VAULT]).toContain('other text')
+  expect(await ui.find({ type: 'Text', text: /changed since the list was drawn/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a /vault command that changes anything is refused unless the person typed it', async ($, on) => {
+  const w = world($, on)
+  await start($)
+  for (const args of ['delete P0001 confirm', 'add | x | y', 'project new Nope', 'done P0001', 'run P0001', 'update']) {
+    const r = await $.command.run({ command: 'vault', args })
+    expect(r.text).toContain('only runs when you type it yourself')
+  }
+  expect(w.writes).toHaveLength(0)
+  expect(w.submitted).toHaveLength(0)
+  expect(w.ran).toHaveLength(0)
 })

@@ -32,7 +32,7 @@ test('the update uses the project releases endpoint and fixed commands, never an
   assert.equal(RELEASES_URL, 'https://api.github.com/repos/raymondtian30/Prompt-Vault-for-Claude-Code/releases/latest')
   assert.deepEqual(UPDATE_ARGV, [
     ['claude', 'plugin', 'marketplace', 'update', 'prompt-vault-for-claude-code'],
-    ['claude', 'plugin', 'update', 'prompt-vault-mod@prompt-vault-for-claude-code'],
+    ['claude', 'plugin', 'update', 'prompt-vault-mod@prompt-vault-for-claude-code', '--scope', 'user'],
   ])
 })
 

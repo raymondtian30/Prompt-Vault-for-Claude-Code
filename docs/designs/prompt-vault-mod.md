@@ -6,6 +6,14 @@
 
 --------------------------------------------------------------------------------
 
+
+> **Revision after approval (2026-11-10), at the author's request.** Four changes supersede the matching parts of this design:
+> 1. **Projects replace the five fixed categories.** A project is a free-form name (create, rename, delete, move a prompt, add into one); it never picks an AI. Run no longer asks for confirmation by category. A prompt may have no project. The file field is `- Project:`; legacy `- Category:` lines are read as projects, and untouched entries are never rewritten. Empty projects are listed on a header `Projects:` line. Deleting a project unfiles its prompts.
+> 2. **IDs are reused.** A new prompt takes the lowest unused ID; the counter line and the "never reused" rule are gone.
+> 3. **The launcher band hides while the pane is open.**
+> 4. **`/vault update`** checks the latest GitHub release and installs it on request; the mod is installed at user scope so the global vault is available in every repo.
+> The sections below describe the original design and are kept for history; where they say "category", read "project".
+
 ## Overview
 
 Prompt Vault is a Claude Code skill that stores prompts in one markdown file, `~/.claude/prompt-vault/prompts.md`. This design adds a Claude Code mod, `prompt-vault-mod`, in `mod/` of the same repository. A mod is a hooks module that Claude Code loads and lets draw UI, register a slash command and submit prompts. It is not a VS Code extension and not a command-hook plugin.

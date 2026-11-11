@@ -226,7 +226,7 @@ Settings are declared in `plugin.json` `userConfig` and appear in the `/config` 
 
 ### Development loop
 
-The deliverable lives in `mod/`. To load it in this session it is mirrored into the session mods folder (`/Users/raymond/.claude/dev-mods/3353d60f-15d7-464a-b9f1-9b563660fd9e/prompt-vault-mod/`) with `rsync -a --delete --exclude .claude-plugin/types mod/ <that folder>/` after edits, and the first write there triggers the engine's one-time "Turn on the mods Claude writes in this session?" question to the user. A symlink in place of the mirror is tried in the spike. `claude plugin validate` runs on `mod/` and on the repo root (marketplace). No user settings file is edited.
+The deliverable lives in `mod/`. To load it in this session it is mirrored into the session mods folder (`<claude config>/dev-mods/<session>/prompt-vault-mod/`) with `rsync -a --delete --exclude .claude-plugin/types mod/ <that folder>/` after edits, and the first write there triggers the engine's one-time "Turn on the mods Claude writes in this session?" question to the user. A symlink in place of the mirror is tried in the spike. `claude plugin validate` runs on `mod/` and on the repo root (marketplace). No user settings file is edited.
 
 ### Risks and mitigations
 
@@ -300,7 +300,7 @@ The deliverable lives in `mod/`. To load it in this session it is mirrored into 
 ### Additional Resources
 
 *   `docs/designs/prompt-vault-mod-brief.md`: seven-lens brainstorm and the user's decisions.
-*   `/private/tmp/claude-502/bundled-skills/2.1.322/90586dcfd9b046696e6332b70e250285/plugin-authoring/reference.md` and `types/claude-code.d.ts`: the mod API for this build.
+*   the Claude Code mod API reference (`reference.md` and `types/claude-code.d.ts`, shipped with the plugin-authoring skill): the mod API for this build.
 *   `skills/prompt-vault/SKILL.md`, `prompt-vault-template/`: the format and commands being matched.
 
 ### Future Improvements

@@ -13,12 +13,6 @@
       "description": "Execute submits the prompt as your own words (on) instead of framed as \"The Prompt Vault plugin sent a message\" (off).",
       "default": true
     },
-    "confirmNonClaudeCodeCategories": {
-      "type": "boolean",
-      "title": "Confirm non-Claude-Code prompts",
-      "description": "Ask before Execute sends a ChatGPT, Research, Coding Projects or Other prompt to Claude Code.",
-      "default": true
-    },
     "pageSize": {
       "type": "number",
       "title": "Prompts per page",

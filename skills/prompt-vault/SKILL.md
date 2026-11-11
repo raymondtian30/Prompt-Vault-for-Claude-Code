@@ -1,6 +1,6 @@
 ---
 name: prompt-vault
-description: Store, organize, search, and retrieve prompts the user intends to send later to AI tools (Claude Code, ChatGPT, etc). Use when the user invokes /prompt-vault (with or without a subcommand like add, done, edit, search, delete, next, send, list, categories), or says things like "save this as a prompt", "mark X prompt as done/completed", "show me my unfinished prompts", "find my prompt about X", "what's the next prompt I should send", or otherwise asks to save, retrieve, organize, or track reusable prompts.
+description: Store, organize, search, and retrieve prompts the user intends to send later to AI tools (Claude Code, ChatGPT, etc). Use when the user invokes /prompt-vault (with or without a subcommand like add, done, edit, search, delete, next, send, list, projects), or says things like "save this as a prompt", "mark X prompt as done/completed", "show me my unfinished prompts", "find my prompt about X", "what's the next prompt I should send", or otherwise asks to save, retrieve, organize, or track reusable prompts.
 ---
 
 # Prompt Vault
@@ -36,7 +36,7 @@ from any working directory.
 
 ````
 ## [ ] P0001: Token Savior
-- Category: Claude Code
+- Project: Website
 - Priority: High
 - Created: 2026-11-09
 - Status: pending
@@ -49,19 +49,23 @@ from any working directory.
 ````
 
 Rules for this file:
-- IDs are `P` + 4-digit zero-padded sequence (`P0001`, `P0002`, ...), assigned
-  in increasing order, **never reused** even after a delete. Track the next
-  free number via the "Next ID counter" line near the top of the file, and
-  update that line every time you assign one. If the counter line is missing
-  or not greater than the highest existing ID, set it to highest existing ID
-  + 1 and tell the user.
+- IDs are `P` + 4-digit zero-padded number (`P0001`, `P0002`, ...). **A new
+  prompt takes the lowest unused ID**, so the ID of a deleted prompt is reused:
+  with `P0002` and `P0003` present, the next prompt is `P0001`. There is no
+  counter. An old header may still contain a `Next ID counter:` line; leave it
+  alone and do not rely on it.
 - Checkbox in the heading: `[ ]` pending, `[x]` completed. This is the single
   source of truth for completion — keep the `Status:` line in sync with it
   (`pending`/`completed`) but the checkbox is canonical.
-- `Category` must be one of: Claude Code, ChatGPT, Coding Projects, Research,
-  Other. If the user doesn't specify one when adding a prompt, ask which
-  category it belongs to (or infer from context and confirm) rather than
-  defaulting silently.
+- `Project` is optional: a free-form name the user chooses (one line, no
+  commas, up to 60 characters) that groups prompts. A project never picks an AI
+  or tool; the prompt can be used anywhere. Omit the line for an unfiled
+  prompt. If the user doesn't name a project when adding, leave it unfiled
+  (offer the existing projects). Older entries may have `- Category:` instead;
+  read it as the project, and write `- Project:` when you edit that entry.
+- A project with no prompts yet is listed on one header line above the START
+  marker, `Projects: Alpha, Beta` (comma-separated). A project also exists
+  whenever any entry uses it.
 - `Priority` is optional — omit the line entirely if not given. Valid values
   if present: High, Medium, Low.
 - `Created` is required, an ISO date. Fill it in with today's date when a
@@ -79,13 +83,13 @@ Rules for this file:
   explicitly asks for an edit.
 - The entry heading is exactly `## [ ] P0001: Title` or `## [x] P0001: Title`;
   the title is everything after the first `: `. Metadata lines come next
-  (`Category`, `Priority` if set, `Created`, `Status`); unknown `- Key: value`
+  (`Project` if set, `Priority` if set, `Created`, `Status`); unknown `- Key: value`
   lines are left untouched. A `---` line or a `## [ ] P…` line inside the
   fence is part of the prompt, not the start of a new entry.
 - Entries live between the `<!-- PROMPTS START -->` and `<!-- PROMPTS END -->`
   lines; new entries go immediately before the END line (at the end of the
-  file if it is missing). `Next ID counter:` is read only above the START
-  line.
+  file if it is missing). The header `Projects:` line is read only above the
+  START line.
 - An older entry whose prompt contains a ` ``` ` line may have been cut short
   by its own fence. If you see one (text after the closing fence that is not
   `---`), tell the user and offer to lengthen that entry's fence; do not guess
@@ -104,8 +108,8 @@ current state before acting.
 ### `/prompt-vault` (no args) — overview
 Show, in the reply (not a file):
 1. Summary line: total prompts, completed count, pending count.
-2. Grouped by category, each prompt shown as `[ ]`/`[x]` + ID + title
-   (+ priority if set). Keep this scannable — title and ID per line, not
+2. Grouped by project (unfiled prompts last), each prompt shown as
+   `[ ]`/`[x]` + ID + title (+ priority if set). Keep this scannable — title and ID per line, not
    the full prompt text.
 3. A one-line reminder of how to retrieve full text (`/prompt-vault send <id>`).
 
@@ -117,11 +121,13 @@ Show, in the reply (not a file):
    re-derive or rephrase it from memory of what it meant.
 2. Determine title: ask, or propose a short descriptive title derived from
    the content and confirm with the user if it's not obvious.
-3. Determine category: ask if not stated, offering the five valid categories.
+3. Determine the project: use the one the user names (matching an existing
+   project's name ignoring case); if none is named, leave the prompt unfiled.
+   Do not invent one.
 4. Priority/date: ask only if the user seems to want them tracked; otherwise
    leave priority unset and default created-date to today.
-5. Assign the next ID from the counter, append a new entry before
-   `<!-- PROMPTS END -->`, bump the counter line.
+5. Assign the lowest unused ID and append a new entry before
+   `<!-- PROMPTS END -->`.
 6. Confirm back with the assigned ID and title (not the full text again).
 
 ### `/prompt-vault done` [or "mark X as completed/done"]
@@ -135,26 +141,28 @@ Show, in the reply (not a file):
 
 ### `/prompt-vault edit`
 1. Resolve the prompt (by ID or title, as above).
-2. Apply only the specific change the user asks for (title, category,
-   priority, or the prompt text itself). Never rewrite parts they didn't ask
+2. Apply only the specific change the user asks for (title, project,
+   priority, or the prompt text itself). Moving a prompt to another project,
+   or out of its project, is an edit. Never rewrite parts they didn't ask
    to change.
 3. If they ask to edit the prompt text itself, confirm the new text with them
    before applying if it's a substantial rewrite; a small stated correction
    can just be applied.
 
 ### `/prompt-vault search <query>` [or "find my prompt about X"]
-Search title, category, and full prompt text (case-insensitive substring or
-close match) across all entries. Return matches as ID + title + category,
+Search title, project, and full prompt text (case-insensitive substring or
+close match) across all entries. Return matches as ID + title + project,
 with enough surrounding context to disambiguate if there are several. If
 nothing matches, say so plainly — don't guess.
 
 ### `/prompt-vault delete`
 1. Resolve the prompt (by ID or title).
-2. Confirm with the user before deleting (this is destructive and IDs are
-   never reused, so get it right) unless they've clearly already confirmed
+2. Confirm with the user before deleting (this is destructive, and the ID
+   will be reused by the next prompt added, so get it right) unless they've clearly already confirmed
    in the same request (e.g. "delete P0003, I'm sure").
 3. Remove the entire entry (heading through the trailing `---`). Do not
-   renumber or reuse its ID for anything else.
+   renumber the other prompts; the freed ID is simply the lowest unused one
+   for the next prompt you add.
 
 ### `/prompt-vault next` [or "what's the next prompt I should send"]
 1. Find the first pending (`[ ]`) prompt, in file order (oldest/lowest ID
@@ -174,18 +182,22 @@ nothing matches, say so plainly — don't guess.
 
 ### `/prompt-vault list` [or "list all prompts", "show me unfinished prompts"]
 Flat or filtered list (e.g. "unfinished" → only `[ ]` entries). One line per
-prompt: checkbox, ID, title, category, priority if set. No full text unless
-asked.
+prompt: checkbox, ID, title, project, priority if set. Can be limited to one
+project. No full text unless asked.
 
-### `/prompt-vault categories`
-List the five valid categories with a count of prompts in each from the
-current file.
+### `/prompt-vault projects`
+List the projects with a count of prompts in each from the current file, and
+the number of unfiled prompts. The user can also ask to create a project (add
+it to the header `Projects:` line), rename one (change the header line and every
+entry that uses it), or delete one (remove it from the header line and from the
+entries that use it, which then become unfiled — the prompts themselves are
+kept; confirm first).
 
 ## Natural-language routing
 
 Map intent to the commands above even when the user doesn't type a slash
 command:
-- "Save this as a Claude Code prompt." → add, category=Claude Code
+- "Save this in the Website project." → add, project=Website
 - "Mark the Token Savior prompt as completed." → done, resolve by title
 - "Show me all unfinished prompts." → list, filter=pending
 - "Find my prompt about Code Explorer." → search

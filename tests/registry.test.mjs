@@ -4,16 +4,16 @@ import { parseVault, renderEntry } from '../mod/hooks/lib/grammar.mjs'
 import { OPERATIONS, createHandlers, parseCommand, argumentHint } from '../mod/hooks/lib/registry.mjs'
 
 const mk = (id, over = {}) =>
-  renderEntry({ id, done: false, title: 'Title ' + id, category: 'Claude Code', created: '2026-11-10', body: 'body of ' + id, ...over })
+  renderEntry({ id, done: false, title: 'Title ' + id, project: 'Claude Code', created: '2026-11-10', body: 'body of ' + id, ...over })
 const vaultOf = entries => ({
   ok: true,
-  ...parseVault(`# DB\n\nNext ID counter: 9\n\n<!-- PROMPTS START -->\n${entries.join('')}<!-- PROMPTS END -->\n`),
+  ...parseVault(`# DB\n\n<!-- PROMPTS START -->\n${entries.join('')}<!-- PROMPTS END -->\n`),
 })
 const V = vaultOf([
   mk('P0001', { priority: 'High', title: 'Token Savior' }),
-  mk('P0002', { category: 'Research', priority: 'Low', done: true, body: 'Look into Code Explorer' }),
+  mk('P0002', { project: 'Research', priority: 'Low', done: true, body: 'Look into Code Explorer' }),
   mk('P0003'),
-  mk('P0004', { category: 'Other', priority: 'Medium' }),
+  mk('P0004', { project: 'Other', priority: 'Medium' }),
 ])
 const handlers = createHandlers()
 
@@ -94,15 +94,39 @@ test('send returns the entry for the UI and a short line, never the body in text
   assert.match((await handlers.send({ vault: V }, 'P0099')).text, /No prompt P0099/)
 })
 
-test('categories counts all five, including empty ones', async () => {
-  const r = await handlers.categories({ vault: V }, '')
-  assert.deepEqual(r.data, [
-    { category: 'Claude Code', count: 2 },
-    { category: 'ChatGPT', count: 0 },
-    { category: 'Coding Projects', count: 0 },
-    { category: 'Research', count: 1 },
-    { category: 'Other', count: 1 },
-  ])
+test('projects lists each project with its count, then the unfiled count', async () => {
+  const r = await handlers.projects({ vault: V }, '')
+  assert.deepEqual(r.data, {
+    projects: [
+      { name: 'Claude Code', count: 2 },
+      { name: 'Research', count: 1 },
+      { name: 'Other', count: 1 },
+    ],
+    unfiled: 0,
+  })
+  assert.match(r.details, /Claude Code: 2/)
+  const withUnfiled = await handlers.projects({ vault: vaultOf([mk('P0001', { project: undefined }), mk('P0002', { project: 'A' })]) }, '')
+  assert.match(withUnfiled.details, /Unfiled: 1/)
+  assert.equal((await handlers.projects({ vault: vaultOf([]) }, '')).text, 'No projects yet.')
+})
+
+test('list can be limited to one project, ignoring case, or to unfiled prompts', async () => {
+  const withUnfiled = vaultOf([mk('P0001', { project: 'Alpha' }), mk('P0002', { project: undefined }), mk('P0003', { project: 'Alpha' })])
+  const alpha = await handlers.list({ vault: withUnfiled }, 'alpha')
+  assert.deepEqual(alpha.data.map(e => e.id), ['P0001', 'P0003'])
+  assert.deepEqual(alpha.view, { filter: 'all', project: 'Alpha' })
+  assert.deepEqual((await handlers.list({ vault: withUnfiled }, 'pending unfiled')).view, { filter: 'pending', project: '__unfiled__' })
+  assert.deepEqual((await handlers.list({ vault: withUnfiled }, '')).view, { filter: 'all', project: '' })
+  assert.deepEqual((await handlers.list({ vault: withUnfiled }, 'unfiled')).data.map(e => e.id), ['P0002'])
+  const none = await handlers.list({ vault: withUnfiled }, 'nonesuch')
+  assert.equal(none.ok, false)
+  assert.match(none.text, /No project called "nonesuch"/)
+})
+
+test('overview groups prompts by project and shows unfiled ones last', async () => {
+  const v = vaultOf([mk('P0001', { project: 'Alpha' }), mk('P0002', { project: undefined }), mk('P0003', { project: 'Beta' })])
+  const r = await handlers.overview({ vault: v }, '')
+  assert.match(r.details, /Alpha \(1\)[\s\S]*P0001[\s\S]*Beta \(1\)[\s\S]*P0003[\s\S]*Unfiled \(1\)[\s\S]*P0002/)
 })
 
 test('queries report an unreadable vault instead of an empty list', async () => {
@@ -111,7 +135,7 @@ test('queries report an unreadable vault instead of an empty list', async () => 
   assert.equal(r.text, 'prompts.md does not exist.')
 })
 
-test('run, load, refresh, help and doctor hand off to the host', async () => {
+test('run, load, refresh, help, doctor and update hand off to the host', async () => {
   const seen = []
   const ctx = {
     vault: V,
@@ -120,6 +144,7 @@ test('run, load, refresh, help and doctor hand off to the host', async () => {
     refresh: async () => (seen.push(['refresh']), { ok: true }),
     help: async q => (seen.push(['help', q]), { ok: true, text: 'help' }),
     doctor: async () => (seen.push(['doctor']), { ok: true, text: 'doctor' }),
+    update: async mode => (seen.push(['update', mode]), { ok: true, text: 'update' }),
     source: { kind: 'command', origin: { kind: 'composer' } },
   }
   assert.equal((await handlers.run(ctx, 'P0001')).ok, true)
@@ -129,13 +154,16 @@ test('run, load, refresh, help and doctor hand off to the host', async () => {
   await handlers.refresh(ctx, '')
   await handlers.help(ctx, 'search')
   await handlers.doctor(ctx, '')
-  assert.deepEqual(seen.slice(1).map(s => s[0]), ['load', 'refresh', 'help', 'doctor'])
+  await handlers.update(ctx, '')
+  await handlers.update(ctx, 'check')
+  assert.deepEqual(seen.slice(1).map(s => s[0]), ['load', 'refresh', 'help', 'doctor', 'update', 'update'])
+  assert.deepEqual(seen.filter(s => s[0] === 'update').map(s => s[1]), ['apply', 'check'])
 })
 
 // ---- write operations ----
 import { parseVault as pv } from '../mod/hooks/lib/grammar.mjs'
 
-const W_TEXT = `# DB\n\nNext ID counter: 3\n\n<!-- PROMPTS START -->\n${mk('P0001')}${mk('P0002', { done: true })}<!-- PROMPTS END -->\n`
+const W_TEXT = `# DB\n\n<!-- PROMPTS START -->\n${mk('P0001')}${mk('P0002', { done: true })}<!-- PROMPTS END -->\n`
 const wctx = () => {
   const calls = []
   return {
@@ -161,28 +189,42 @@ test('done and reopen go through the guarded mutate and name the id', async () =
   assert.match((await handlers.done(c, 'P0099')).text, /No prompt P0099/)
 })
 
-test('add parses "category[:priority] | title | text", keeps the text whole, and has no default category', async () => {
+test('add parses "[project[:priority]] | title | text", keeps the text whole, files into an existing project case-insensitively', async () => {
   const c = wctx()
-  const ok = await handlers.add(c, 'research:high | My title | line one\nline | two')
+  const ok = await handlers.add(c, 'claude code:high | My title | line one\nline | two')
   assert.equal(ok.ok, true)
   assert.match(ok.text, /Added P0003 "My title"/)
   const e = pv(ok.data.text).entries.find(x => x.id === 'P0003')
-  assert.deepEqual([e.category, e.priority, e.title, e.body, e.created], ['Research', 'High', 'My title', 'line one\nline | two', '2026-11-10'])
+  assert.deepEqual([e.project, e.priority, e.title, e.body, e.created], ['Claude Code', 'High', 'My title', 'line one\nline | two', '2026-11-10'])
+  const unfiled = await handlers.add(c, ' | Loose | text')
+  assert.equal(pv(unfiled.data.text).entries.find(x => x.id === 'P0003').project, undefined)
+  const fresh = await handlers.add(c, 'Brand new | T | b')
+  assert.equal(pv(fresh.data.text).entries.find(x => x.id === 'P0003').project, 'Brand new')
   assert.match((await handlers.add(c, '')).text, /Usage: \/vault add/)
   assert.match((await handlers.add(c, 'My title | text')).text, /Usage: \/vault add/)
-  assert.match((await handlers.add(c, 'nope | t | b')).text, /Category must be one of/)
-  assert.match((await handlers.add(c, ' | t | b')).text, /Choose a category/)
+  assert.match((await handlers.add(c, 'a,b | t | b')).text, /A project name is one line/)
 })
 
-test('edit changes one named field; priority clear removes it', async () => {
+test('add into a gap takes the lowest free id', async () => {
+  const c = wctx()
+  c.mutate = async (edit, opts) => (c.calls.push(opts), edit(W_TEXT.replace(/## \[ \] P0001[\s\S]*?---\n/, '')))
+  const r = await handlers.add(c, ' | T | b')
+  assert.match(r.text, /Added P0001/)
+})
+
+test('edit changes one named field; priority clear and project clear remove them', async () => {
   const c = wctx()
   const t = await handlers.edit(c, 'P0001 title New title here')
   assert.equal(t.ok, true)
   assert.equal(pv(t.data.text).entries[0].title, 'New title here')
   const p = await handlers.edit(c, 'P0001 priority High')
   assert.equal(pv(p.data.text).entries[0].priority, 'High')
-  const cat = await handlers.edit(c, 'P0001 category Other')
-  assert.equal(pv(cat.data.text).entries[0].category, 'Other')
+  const proj = await handlers.edit(c, 'P0001 project Beta')
+  assert.equal(pv(proj.data.text).entries[0].project, 'Beta')
+  const cleared = await handlers.edit(c, 'P0001 project clear')
+  assert.equal(pv(cleared.data.text).entries[0].project, undefined)
+  const canon = await handlers.edit(c, 'P0001 project claude CODE')
+  assert.equal(canon.text, 'Nothing to change.')
   const b = await handlers.edit(c, 'P0001 body two\nlines')
   assert.equal(pv(b.data.text).entries[0].body, 'two\nlines')
   assert.match((await handlers.edit(c, 'P0001 nonsense x')).text, /Usage: \/vault edit/)
@@ -205,8 +247,29 @@ test('stop hands off to the host', async () => {
   assert.equal((await handlers.stop(wctx(), 'confirm')).text, 'stop confirm')
 })
 
+test('project new, rename and delete work through the guarded mutate', async () => {
+  const c = wctx()
+  const made = await handlers.project(c, 'new Gamma')
+  assert.equal(made.text, 'Created project "Gamma".')
+  assert.deepEqual(pv(made.data.text).header.projects, ['Gamma'])
+  assert.match((await handlers.project(c, 'new claude code')).text, /already a project/)
+  const renamed = await handlers.project(c, 'rename Claude Code | Core')
+  assert.equal(renamed.text, 'Renamed "Claude Code" to "Core" (2 prompts moved).')
+  assert.deepEqual(c.calls.at(-1), {})
+  const ask = await handlers.project(c, 'delete Claude Code')
+  assert.match(ask.text, /unfiles its 2 prompts/)
+  assert.match(ask.text, /\/vault project delete Claude Code confirm/)
+  const before = c.calls.length
+  const gone = await handlers.project(c, 'delete Claude Code confirm')
+  assert.equal(gone.text, 'Deleted project "Claude Code". Its 2 prompts are kept, now unfiled.')
+  assert.equal(c.calls.length, before + 1)
+  assert.match((await handlers.project(c, '')).text, /Usage: \/vault project/)
+  assert.match((await handlers.project(c, 'rename OnlyOne')).text, /Usage: \/vault project rename/)
+  assert.match((await handlers.project(c, 'delete Nope confirm')).text, /no project called "Nope"/i)
+})
+
 test('every skill command has a registry entry that mirrors it', () => {
-  const skillCommands = ['overview', 'add', 'done', 'edit', 'search', 'delete', 'next', 'send', 'list', 'categories']
+  const skillCommands = ['overview', 'add', 'done', 'edit', 'search', 'delete', 'next', 'send', 'list', 'projects']
   const mirrored = new Set(OPERATIONS.map(o => o.skillEquivalent).filter(Boolean))
   for (const c of skillCommands) assert.ok(mirrored.has(c), c)
 })

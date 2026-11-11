@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { SEED } from '../mod/hooks/lib/vault.mjs'
-import { CATEGORIES, PRIORITIES, START_MARKER, END_MARKER } from '../mod/hooks/lib/grammar.mjs'
+import { PRIORITIES, START_MARKER, END_MARKER } from '../mod/hooks/lib/grammar.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = p => readFileSync(join(root, p), 'utf8')
@@ -13,12 +13,15 @@ test('embedded vault header is byte-identical to the template prompts.md', () =>
   assert.equal(SEED, read('prompt-vault-template/prompts.md'))
 })
 
-test('grammar constants match what SKILL.md states', () => {
+test('grammar constants match what SKILL.md states, and the skill describes projects and id reuse', () => {
   const skill = read('skills/prompt-vault/SKILL.md').replace(/\s+/g, ' ')
-  assert.ok(skill.includes(`must be one of: ${CATEGORIES.join(', ')}.`), 'categories')
   assert.ok(skill.includes(`Valid values if present: ${PRIORITIES.join(', ')}.`), 'priorities')
   assert.ok(skill.includes(START_MARKER), 'start marker')
   assert.ok(skill.includes(END_MARKER), 'end marker')
+  assert.ok(skill.includes('Projects:'), 'header Projects line')
+  assert.ok(/lowest unused ID/i.test(skill), 'lowest unused id rule')
+  assert.ok(!/never reused/i.test(skill), 'old never-reused rule must be gone')
+  assert.ok(!/Next ID counter/.test(skill.replace(/an old[^.]*Next ID counter[^.]*\./i, '')), 'no counter rule')
 })
 
 import { OPERATIONS } from '../mod/hooks/lib/registry.mjs'
@@ -78,7 +81,7 @@ test('the release version is the same in manifest, install.sh, README pin and CH
 })
 
 test('README documents every /vault operation with its exact syntax', () => {
-  const readme = read('README.md')
+  const readme = read('README.md').replace(/\\\|/g, '|')
   for (const o of OPERATIONS) assert.ok(readme.includes('`' + o.syntax + '`'), o.syntax)
 })
 

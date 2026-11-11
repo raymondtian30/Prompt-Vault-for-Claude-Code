@@ -9,24 +9,33 @@ import { initialExec, reduce } from './lib/runstate.mjs'
 import { runPrompt } from './lib/execute.mjs'
 import { loadVault, resolveVaultPath } from './lib/vault.mjs'
 import { mutateVault, createWriteQueue } from './lib/writer.mjs'
-import { setDone, addEntry, editEntry, deleteEntry } from './lib/edit.mjs'
+import { setDone, addEntry, editEntry, deleteEntry, createProject, renameProject, deleteProject } from './lib/edit.mjs'
+import { runUpdate } from './lib/update.mjs'
 import { createHandlers, parseCommand, argumentHint } from './lib/registry.mjs'
 import { lightIndex, lightEntry, previewBody, runLine } from './lib/viewmodel.mjs'
 import { MOD_VERSION } from './lib/config.mjs'
 
 const PANE = 'vault'
 const MAX_EDIT_CHARS = 100000
-const EMPTY_SEED = { title: '', category: '', priority: '', body: '' }
+const EMPTY_SEED = { title: '', project: '', priority: '', body: '' }
 const VIEW0 = {
   screen: 'menu',
   page: 0,
   query: '',
   filter: 'all',
+  project: '',
+  paneOpen: false,
   selectedId: null,
   pendingDelete: null,
   pendingStop: false,
+  pendingProjectDelete: null,
   notice: null,
   helpQuery: '',
+  projectFormMode: 'new',
+  projectFrom: null,
+  projectSeed: '',
+  projectError: null,
+  updateInfo: null,
   formMode: 'add',
   formId: null,
   seed: EMPTY_SEED,
@@ -37,7 +46,7 @@ const exec = atom({ plugin: 'prompt-vault-mod', key: 'exec' } as const, initialE
 const view = atom({ plugin: 'prompt-vault-mod', key: 'view' } as const, VIEW0, { shape: 'view-1' })
 const index = atom({ plugin: 'prompt-vault-mod', key: 'index' } as const, null, { shape: 'index-1' })
 const detail = atom({ plugin: 'prompt-vault-mod', key: 'detail' } as const, null, { shape: 'detail-1' })
-const form = atom({ plugin: 'prompt-vault-mod', key: 'form' } as const, { ...EMPTY_SEED, runId: '' }, { shape: 'form-1' })
+const form = atom({ plugin: 'prompt-vault-mod', key: 'form' } as const, { ...EMPTY_SEED, runId: '', projectName: '' }, { shape: 'form-1' })
 
 const queue = createWriteQueue()
 const handlers: Record<string, any> = createHandlers()
@@ -114,10 +123,7 @@ function execDeps($: any, options: any) {
       const t = $.clock.after(ms, fn)
       return () => t.cancel()
     },
-    settings: {
-      submitAsUser: options.submitAsUser !== false,
-      confirmNonClaudeCodeCategories: options.confirmNonClaudeCodeCategories !== false,
-    },
+    settings: { submitAsUser: options.submitAsUser !== false },
   }
 }
 
@@ -126,20 +132,20 @@ async function afterRun($: any, r: any) {
     const s = await read($, exec)
     $.ui.status(`Prompt Vault: ${runLine(s.run)}`)
     $.ui.toast(r.state === 'accepted' ? `${r.id} accepted by Claude Code` : `${r.id} accepted, text changed by another plugin`)
-  } else if (r.code !== 'needs-confirm') {
+  } else {
     $.ui.toast(r.message)
   }
 }
 
-async function pressRun($: any, options: any, id: string, confirmed: boolean) {
-  const r: any = await runPrompt(execDeps($, options), { id, confirmed, source: { kind: 'press' } })
+async function pressRun($: any, options: any, id: string) {
+  const r: any = await runPrompt(execDeps($, options), { id, source: { kind: 'press' } })
   if (!r.ok && !r.state) await setView($, { notice: r.message })
   await afterRun($, r)
   return r
 }
 
 async function commandRun($: any, options: any, id: string, source: any) {
-  const p: Promise<any> = runPrompt(execDeps($, options), { id, confirmed: true, source })
+  const p: Promise<any> = runPrompt(execDeps($, options), { id, source })
   const first: any = await Promise.race([p, $.clock.sleep(300).then(() => null)])
   void p.then((r: any) => afterRun($, r))
   if (first === null) return { ok: true, text: `Sending ${id}… the Prompt Vault pane shows the result.` }
@@ -176,17 +182,40 @@ async function loadIntoBox($: any, options: any, id: string) {
     : { ok: false, text: 'The prompt box could not take the text right now (a dialog may be open).' }
 }
 
+// ---------- update ----------
+
+function updateDeps($: any) {
+  return {
+    currentVersion: MOD_VERSION,
+    fetchRelease: (url: string) => $.http.fetch(url, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'prompt-vault-mod' } }),
+    run: (argv: string[]) => $.process.run(argv, { timeoutMs: 120000 }),
+  }
+}
+
+async function updateCmd($: any, mode: string, source: any) {
+  const fromPerson = source && (source.kind === 'press' || (source.kind === 'command' && source.origin && source.origin.kind === 'composer'))
+  if (mode === 'apply' && !fromPerson) return { ok: false, text: 'An update only installs when you ask for it yourself.' }
+  const r: any = await runUpdate(updateDeps($), { apply: mode === 'apply' })
+  await setView($, { updateInfo: { state: r.state, message: r.message, version: r.version ?? null } })
+  if (r.state === 'updated') $.ui.toast(r.message)
+  return { ok: r.ok, text: r.message }
+}
+
 // ---------- pane and commands ----------
 
 async function openPane($: any) {
   const r = await $.ui.open({ id: PANE, title: 'Prompt Vault', focus: true, closeOnEscape: true, rows: 20 })
-  if (!r.isPlaced) $.ui.toast(`Prompt Vault pane could not open: ${r.reason ?? 'no room'}`)
+  if (r.isPlaced) await setView($, { paneOpen: true })
+  else $.ui.toast(`Prompt Vault pane could not open: ${r.reason ?? 'no room'}`)
   return r
 }
 
 async function togglePane($: any, options: any) {
   const open = (await $.ui.panes()).some((p: any) => p.id === PANE)
-  if (open) return $.ui.close({ id: PANE })
+  if (open) {
+    await setView($, { paneOpen: false })
+    return $.ui.close({ id: PANE })
+  }
   await refreshIndex($, options)
   await setView($, { ...VIEW0 })
   return openPane($)
@@ -238,17 +267,22 @@ async function runCommand($: any, options: any, e: any) {
     },
     doctor: () => doctor($, options),
     stop: (args: string) => stopTurn($, args === 'confirm'),
+    update: (mode: string) => updateCmd($, mode, { kind: 'command', origin: e.origin }),
   }
   const r = await handlers[parsed.op](ctx, parsed.args)
   if (r.ok && ['list', 'search', 'overview'].includes(parsed.op)) {
-    const f = parsed.args.toLowerCase()
     await refreshIndex($, options)
     await setView($, {
       ...VIEW0,
       screen: 'list',
       query: parsed.op === 'search' ? parsed.args : '',
-      filter: parsed.op === 'list' && (f === 'pending' || f === 'done') ? f : 'all',
+      filter: r.view ? r.view.filter : 'all',
+      project: r.view ? r.view.project : '',
     })
+    await openPane($)
+  } else if (r.ok && (parsed.op === 'projects' || parsed.op === 'project')) {
+    await refreshIndex($, options)
+    await setView($, { ...VIEW0, screen: 'projects' })
     await openPane($)
   } else if (r.ok && (parsed.op === 'send' || parsed.op === 'next') && r.data && r.data.id) {
     await refreshIndex($, options)
@@ -274,7 +308,7 @@ async function saveForm($: any, options: any) {
     const r = await mutate(
       $,
       options,
-      (t: string) => addEntry(t, { title: f.title, category: f.category || undefined, priority: f.priority || undefined, created, body: f.body }),
+      (t: string) => addEntry(t, { title: f.title, project: f.project || undefined, priority: f.priority || undefined, created, body: f.body }),
       {},
     )
     if (!r.ok) return setView($, { formError: r.message })
@@ -283,11 +317,26 @@ async function saveForm($: any, options: any) {
   }
   const id = v.formId
   const changes: any = { title: f.title, body: f.body }
-  if (f.category) changes.category = f.category
+  changes.project = f.project === '' ? null : f.project
   changes.priority = f.priority === '' ? null : f.priority
   const r = await mutate($, options, (t: string) => editEntry(t, id, changes), { touched: id })
   if (!r.ok) return setView($, { formError: r.message })
   return setView($, { screen: 'detail', formError: null })
+}
+
+async function saveProjectForm($: any, options: any, typed?: string) {
+  const v: any = await read($, view)
+  const f: any = await read($, form)
+  const name = String(typeof typed === 'string' ? typed : (f.projectName ?? '')).trim()
+  const renaming = v.projectFormMode === 'rename'
+  const r: any = await mutate(
+    $,
+    options,
+    (t: string) => (renaming ? renameProject(t, v.projectFrom, name) : createProject(t, name)),
+    {},
+  )
+  if (!r.ok) return setView($, { projectError: r.message })
+  return setView($, { screen: 'projects', projectError: null, notice: renaming ? `Renamed to "${name}".` : `Created project "${name}".` })
 }
 
 function makeActions($: any, options: any) {
@@ -306,7 +355,7 @@ function makeActions($: any, options: any) {
       await go({ screen: 'detail', selectedId: id, pendingDelete: null, pendingStop: false, notice: null })
     },
     openRunId: () => go({ screen: 'runid', notice: null }),
-    openAdd: () => openForm($, 'add', null, EMPTY_SEED),
+    openAdd: (project?: string) => openForm($, 'add', null, { ...EMPTY_SEED, project: project ?? '' }),
     openEdit: async (id: string) => {
       const v = await readVault($, options)
       const e = v.ok ? v.entries.find((x: any) => x.id === id) : undefined
@@ -314,7 +363,7 @@ function makeActions($: any, options: any) {
       if ((e.body ?? '').length > MAX_EDIT_CHARS) {
         return go({ notice: `${id} is ${(e.body ?? '').length} characters, too long to edit here. Edit it in prompts.md.` })
       }
-      return openForm($, 'edit', id, { title: e.title, category: e.category ?? '', priority: e.priority ?? '', body: e.body ?? '' })
+      return openForm($, 'edit', id, { title: e.title, project: e.project ?? '', priority: e.priority ?? '', body: e.body ?? '' })
     },
     openHelp: () => go({ screen: 'help', notice: null }),
     setHelpQuery: (q: string) => go({ helpQuery: q }),
@@ -323,14 +372,42 @@ function makeActions($: any, options: any) {
       await refreshIndex($, options)
       await go({ notice: 'Vault re-read.' })
     },
-    run: (id: string, confirmed?: boolean) => pressRun($, options, id, Boolean(confirmed)),
+    run: (id: string) => pressRun($, options, id),
     runById: async (text: string | null) => {
       const typed = text !== null ? text : (await read($, form)).runId
       const id = String(typed ?? '').trim().toUpperCase()
       if (id === '') return go({ notice: 'Type a prompt ID such as P0001.' })
-      return pressRun($, options, id, false)
+      return pressRun($, options, id)
     },
-    cancelConfirm: () => update($, exec, (s: any) => reduce(s, { type: 'confirm.cancel' })),
+    openProjects: async () => {
+      await refreshIndex($, options)
+      await go({ screen: 'projects', notice: null, pendingProjectDelete: null })
+    },
+    openProject: async (name: string) => {
+      await refreshIndex($, options)
+      await go({ screen: 'list', project: name, query: '', filter: 'all', page: 0, notice: null, pendingDelete: null })
+    },
+    openNewProject: async () => {
+      await update($, form, (s: any) => ({ ...s, projectName: '' }))
+      await go({ screen: 'projectform', projectFormMode: 'new', projectFrom: null, projectSeed: '', projectError: null, notice: null })
+    },
+    openRenameProject: async (name: string) => {
+      await update($, form, (s: any) => ({ ...s, projectName: name }))
+      await go({ screen: 'projectform', projectFormMode: 'rename', projectFrom: name, projectSeed: name, projectError: null, notice: null })
+    },
+    saveProjectForm: (typed?: string) => saveProjectForm($, options, typed),
+    askDeleteProject: (name: string) => go({ pendingProjectDelete: name }),
+    cancelDeleteProject: () => go({ pendingProjectDelete: null }),
+    confirmDeleteProject: async (name: string) => {
+      const r: any = await mutate($, options, (t: string) => deleteProject(t, name), {})
+      await go({ pendingProjectDelete: null, notice: r.ok ? `Deleted project "${name}".` : r.message })
+    },
+    moveTo: async (id: string, project: string) => {
+      const r: any = await mutate($, options, (t: string) => editEntry(t, id, { project: project === '' ? null : project }), { touched: id })
+      if (!r.ok) await go({ notice: r.message })
+    },
+    checkUpdate: () => updateCmd($, 'check', { kind: 'press' }),
+    installUpdate: () => updateCmd($, 'apply', { kind: 'press' }),
     load: async (id: string) => {
       const r = await loadIntoBox($, options, id)
       await go({ notice: r.text })
@@ -357,7 +434,7 @@ function makeActions($: any, options: any) {
     saveForm: () => saveForm($, options),
     cancelForm: async () => {
       const v: any = await read($, view)
-      await go({ screen: v.formMode === 'edit' ? 'detail' : 'menu', formError: null })
+      await go({ screen: v.formMode === 'edit' ? 'detail' : v.project === '' ? 'menu' : 'list', formError: null })
     },
     clearNotice: () => go({ notice: null }),
     toggle: () => togglePane($, options),
@@ -381,9 +458,15 @@ export const register: Register = (on, options) => {
       description: 'Prompt Vault: open the menu, or run a subcommand (help lists them)',
       argumentHint: argumentHint(),
     })
+    await setView($, { paneOpen: false })
     await refreshIndex($, options)
     return next(e)
   })
+
+  on('ui.close', async ($, e, next) => {
+    if ((e as any).id === PANE) await setView($, { paneOpen: false })
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   on('command.run', { command: 'vault' }, async ($, e) => runCommand($, options, e))
 
@@ -407,6 +490,8 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
+    const v: any = await read($, view)
+    if (v.paneOpen) return next(e)
     return Launcher($.ui.resolve(e), { exec: await read($, exec) }, makeActions($, options))
   })
 

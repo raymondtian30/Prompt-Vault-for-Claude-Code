@@ -29,11 +29,23 @@ export const FAQ = [
   },
   {
     q: 'Where are my prompts stored?',
-    a: 'In ~/.claude/prompt-vault/prompts.md as plain markdown. Copy that folder to back it up or move it to another machine.',
+    a: 'In ~/.claude/prompt-vault/prompts.md as plain markdown, one vault for every repo you open. Copy that folder to back it up or move it to another machine.',
   },
   {
-    q: 'Why am I asked to confirm before Execute?',
-    a: 'The prompt is filed under a category other than Claude Code (ChatGPT, Research, Coding Projects or Other). You can turn the question off in the confirmNonClaudeCodeCategories setting.',
+    q: 'What is a project?',
+    a: 'A name you choose to group prompts, such as "Website" or "Research". A project never picks an AI: every prompt can be run in Claude Code whatever its project. A prompt can also have no project. Create, rename and delete projects from the Projects screen or with /vault project.',
+  },
+  {
+    q: 'What happens to a deleted prompt\'s ID?',
+    a: 'It becomes free. The next prompt you add takes the lowest unused ID, so if you delete P0001 the next new prompt is P0001.',
+  },
+  {
+    q: 'What happens to a project\'s prompts when I delete the project?',
+    a: 'They are kept and become unfiled. Only the project name goes away.',
+  },
+  {
+    q: 'How do I update Prompt Vault?',
+    a: 'Run /vault update (or use Check for updates in the menu). It looks for a newer release on GitHub and installs it, then you start a new Claude Code session. /vault update check only looks.',
   },
   {
     q: 'Do @file mentions and pasted images work with Execute?',
@@ -61,6 +73,10 @@ export const TROUBLESHOOTING = [
   {
     q: 'A prompt I just added does not show.',
     a: 'Run /vault refresh. The menu re-reads the file when it opens and after its own changes, not when another program edits it.',
+  },
+  {
+    q: '/vault update says it cannot run commands.',
+    a: 'Some surfaces do not let a mod run commands. /vault update then prints the two commands to run in a terminal; run them and start a new Claude Code session.',
   },
   {
     q: 'The vault is disabled and mentions HOME.',

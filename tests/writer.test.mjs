@@ -1,13 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseVault, renderEntry } from '../mod/hooks/lib/grammar.mjs'
-import { setDone, addEntry } from '../mod/hooks/lib/edit.mjs'
+import { setDone, addEntry, renameProject } from '../mod/hooks/lib/edit.mjs'
 import { mutateVault, createWriteQueue } from '../mod/hooks/lib/writer.mjs'
 
 const P = '/v/prompts.md'
 const mk = (id, over = {}) =>
-  renderEntry({ id, done: false, title: 'T ' + id, category: 'Claude Code', created: '2026-11-09', body: 'body ' + id, ...over })
-const TEXT = `# DB\n\nNext ID counter: 3\n\n<!-- PROMPTS START -->\n${mk('P0001')}${mk('P0002')}<!-- PROMPTS END -->\n`
+  renderEntry({ id, done: false, title: 'T ' + id, project: 'Alpha', created: '2026-11-09', body: 'body ' + id, ...over })
+const TEXT = `# DB\n\n<!-- PROMPTS START -->\n${mk('P0001')}${mk('P0002')}<!-- PROMPTS END -->\n`
 
 function memfs(initial = TEXT) {
   const s = { files: { [P]: initial }, mtime: 1000, writes: [], reads: 0, stats: 0, hook: {} }
@@ -64,7 +64,7 @@ test('if the file changes between the read and the write, it re-reads and edits 
     if (first && s.stats >= 2) {
       first = false
       // someone else (the skill) appended P0003 right now
-      s.files[P] = addEntry(s.files[P], { title: 'Skill added', category: 'Other', created: '2026-11-10', body: 'x' }).text
+      s.files[P] = addEntry(s.files[P], { title: 'Skill added', project: 'Other', created: '2026-11-10', body: 'x' }).text
       s.mtime += 5
       return { ...st, mtimeMs: s.mtime }
     }
@@ -146,9 +146,25 @@ test('an edit that would alter an entry it does not own is refused before any wr
 test('two adds in a row through the queue get different ids and both land', async () => {
   const fs = memfs()
   const queue = createWriteQueue()
-  const add = title => mutateVault({ fs, path: P, queue }, t => addEntry(t, { title, category: 'Other', created: '2026-11-10', body: 'b ' + title }), {})
+  const add = title => mutateVault({ fs, path: P, queue }, t => addEntry(t, { title, project: 'Other', created: '2026-11-10', body: 'b ' + title }), {})
   const [a, b] = await Promise.all([add('one'), add('two')])
   assert.equal(a.ok && b.ok, true)
   assert.notEqual(a.id, b.id)
   assert.deepEqual(parseVault(fs.files[P]).entries.map(e => e.title), ['T P0001', 'T P0002', 'one', 'two'])
+})
+
+test('an edit that changes several prompts names them in its result and passes the integrity check', async () => {
+  const fs = memfs()
+  const r = await mutateVault({ fs, path: P }, t => renameProject(t, 'Alpha', 'Renamed'), {})
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.touched, ['P0001', 'P0002'])
+  assert.deepEqual(parseVault(fs.files[P]).entries.map(e => e.project), ['Renamed', 'Renamed'])
+})
+
+test('an edit that also changes a prompt it did not name is refused', async () => {
+  const fs = memfs()
+  const sloppy = t => ({ ...renameProject(t, 'Alpha', 'Renamed'), touched: ['P0001'] })
+  const r = await mutateVault({ fs, path: P }, sloppy, {})
+  assert.deepEqual([r.ok, r.error], [false, 'integrity'])
+  assert.equal(fs.writes.length, 0)
 })

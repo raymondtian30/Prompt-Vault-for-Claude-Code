@@ -29,9 +29,9 @@ function unsafeReason(entry) {
 
 /**
  * Ordered preconditions. Returns { ok: true, entry } or { ok: false, code, message }.
- * @param {{ vault: any, id: string, exec: any, confirmed: boolean, source?: any, settings: any }} a
+ * @param {{ vault: any, id: string, exec: any, source?: any }} a
  */
-export function precheck({ vault, id, exec, confirmed, source, settings }) {
+export function precheck({ vault, id, exec, source }) {
   const fromPerson = source && (source.kind === 'press' || (source.kind === 'command' && source.origin?.kind === 'composer'))
   if (!fromPerson) {
     return { ok: false, code: 'bad-origin', message: 'Execute only runs from a button press or your own /vault command.' }
@@ -48,29 +48,18 @@ export function precheck({ vault, id, exec, confirmed, source, settings }) {
   }
   const free = canExecute(exec)
   if (!free.ok) return free
-  if (settings.confirmNonClaudeCodeCategories && entry.category !== 'Claude Code' && !confirmed) {
-    return {
-      ok: false,
-      code: 'needs-confirm',
-      state: 'confirming',
-      message: `${id} is filed under ${entry.category ?? 'no category'}. Send it to Claude Code anyway?`,
-    }
-  }
   return { ok: true, entry }
 }
 
 /**
  * Run one prompt. Success is reported only when submit resolves with text.
  * @param {object} deps
- * @param {{ id: string, confirmed?: boolean, source?: any }} req
+ * @param {{ id: string, source?: any }} req
  */
-export async function runPrompt(deps, { id, confirmed = false, source }) {
+export async function runPrompt(deps, { id, source }) {
   const vault = await deps.loadVault()
-  const pre = precheck({ vault, id, exec: await deps.getExec(), confirmed, source, settings: deps.settings })
-  if (!pre.ok) {
-    if (pre.code === 'needs-confirm') await deps.dispatch({ type: 'confirming', id })
-    return pre
-  }
+  const pre = precheck({ vault, id, exec: await deps.getExec(), source })
+  if (!pre.ok) return pre
   const entry = pre.entry
   const token = deps.newToken()
   await deps.dispatch({ type: 'claim', claim: { token, promptId: id, startedAt: await deps.now() } })

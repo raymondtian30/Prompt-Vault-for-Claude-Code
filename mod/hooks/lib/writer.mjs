@@ -26,7 +26,7 @@ export function createWriteQueue() {
 function intact(oldVault, newText, touched, added) {
   const next = parseVault(newText)
   for (const e of oldVault.entries) {
-    if (e.id === touched) continue
+    if (touched.has(e.id)) continue
     if (!next.entries.some(x => x.id === e.id && x.raw === e.raw)) return false
   }
   return next.entries.filter(x => !oldVault.entries.some(o => o.id === x.id)).every(x => x.id === added)
@@ -36,7 +36,8 @@ function intact(oldVault, newText, touched, added) {
  * Apply `edit(text)` (a function from edit.mjs) to the vault safely.
  * @param {{ fs: any, path: string, queue?: { run: Function }, retries?: number }} deps
  * @param {(text: string) => any} edit
- * @param {{ touched?: string, retries?: number }} [opts] `touched`: the one id the edit may change
+ * @param {{ touched?: string | string[], retries?: number }} [opts] `touched`: the id(s) the edit may change
+ *   (an edit result may carry its own `touched` list, which wins)
  */
 export function mutateVault(deps, edit, opts = {}) {
   const retries = opts.retries ?? deps.retries ?? 3
@@ -49,7 +50,8 @@ export function mutateVault(deps, edit, opts = {}) {
 
       const r = edit(v.text)
       if (!r.ok || !r.changed) return r
-      if (!intact(v, r.text, opts.touched, r.id)) {
+      const touched = new Set([].concat(r.touched ?? opts.touched ?? []))
+      if (!intact(v, r.text, touched, r.id)) {
         return fail('integrity', 'The edit would have changed another prompt, so nothing was written.')
       }
 

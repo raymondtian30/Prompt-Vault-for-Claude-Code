@@ -2,7 +2,7 @@
 // pure reducer so the mod can apply it with the state library's compare-and-set
 // `update`. No I/O, no import from `claude-code`.
 //
-// Run states: sending, accepted, accepted-changed, refused, failed, confirming.
+// Run states: sending, accepted, accepted-changed, refused, failed.
 // ("Run state" is the name used everywhere: `Status:` in prompts.md already means
 // pending or completed.)
 
@@ -47,10 +47,6 @@ export function reduce(s, e) {
       if (!s.slot || s.slot.token !== e.token || s.slot.phase !== 'sending' || !s.run) return s
       return { ...s, run: { ...s.run, slow: true } }
     }
-    case 'confirming':
-      return { ...s, run: { state: 'confirming', id: e.id } }
-    case 'confirm.cancel':
-      return s.run && s.run.state === 'confirming' ? { ...s, run: null } : s
     case 'session.end':
       return initialExec()
     case 'reset':

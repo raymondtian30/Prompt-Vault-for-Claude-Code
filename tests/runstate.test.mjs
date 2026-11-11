@@ -76,12 +76,6 @@ test('session.end clears everything; reset clears slot and run but not the runni
   assert.equal(r.turn.running, true)
 })
 
-test('confirming and cancelling the confirmation', () => {
-  const c = apply(initialExec(), { type: 'confirming', id: 'P0007' })
-  assert.deepEqual(c.run, { state: 'confirming', id: 'P0007' })
-  assert.equal(apply(c, { type: 'confirm.cancel' }).run, null)
-})
-
 test('canExecute is blocked by a running turn or a held slot', () => {
   assert.deepEqual(canExecute(initialExec()), { ok: true })
   assert.equal(canExecute(apply(initialExec(), { type: 'turn.start', turnId: 't1' })).code, 'busy-turn')

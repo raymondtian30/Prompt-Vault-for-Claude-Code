@@ -1,5 +1,7 @@
 // View-model helpers: what the UI draws, computed from data. Pure; no import from `claude-code`.
 
+import { listProjects } from './grammar.mjs'
+
 export function truncate(s, n) {
   if (s.length <= n) return s
   return s.slice(0, Math.max(0, n - 1)) + '…'
@@ -14,24 +16,31 @@ export function lightEntry(e) {
     id: e.id,
     done: e.done,
     title: e.title,
-    category: e.category,
+    project: e.project,
     priority: e.priority,
     created: e.created,
     bodyLength: body.length,
     flag: flagOf(e),
-    hay: `${e.id} ${e.title} ${e.category ?? ''} ${body.slice(0, 2000)}`.toLowerCase(),
+    hay: `${e.id} ${e.title} ${e.project ?? ''} ${body.slice(0, 2000)}`.toLowerCase(),
   }
 }
 
 export function lightIndex(v) {
   if (!v.ok) return { ok: false, error: v.error, message: v.message }
-  return { ok: true, mtimeMs: v.mtimeMs, counter: v.header.counter, entries: v.entries.map(lightEntry) }
+  const { projects, unfiled } = listProjects(v.header, v.entries)
+  return { ok: true, mtimeMs: v.mtimeMs, projects, unfiled, entries: v.entries.map(lightEntry) }
 }
 
-export function pageOf(entries, { query = '', filter = 'all', page = 0, pageSize = 8 } = {}) {
+export const UNFILED = '__unfiled__'
+
+/** `project`: '' for all, UNFILED for prompts with no project, or a project name. */
+export function pageOf(entries, { query = '', filter = 'all', project = '', page = 0, pageSize = 8 } = {}) {
   const q = query.trim().toLowerCase()
   const hit = entries.filter(
-    e => (filter === 'pending' ? !e.done : filter === 'done' ? e.done : true) && (q === '' || e.hay.includes(q)),
+    e =>
+      (filter === 'pending' ? !e.done : filter === 'done' ? e.done : true) &&
+      (project === '' || (project === UNFILED ? !e.project : e.project === project)) &&
+      (q === '' || e.hay.includes(q)),
   )
   const pages = Math.max(1, Math.ceil(hit.length / pageSize))
   const p = Math.min(Math.max(0, page), pages - 1)

@@ -4,7 +4,7 @@ import { parseVault, renderEntry } from '../mod/hooks/lib/grammar.mjs'
 import { truncate, lightIndex, pageOf, previewBody, runLine } from '../mod/hooks/lib/viewmodel.mjs'
 
 const mk = (id, over = {}) =>
-  renderEntry({ id, done: false, title: 'Title ' + id, category: 'Claude Code', created: '2026-11-10', body: 'body ' + id, ...over })
+  renderEntry({ id, done: false, title: 'Title ' + id, project: 'Claude Code', created: '2026-11-10', body: 'body ' + id, ...over })
 const loaded = entries => ({
   ok: true,
   mtimeMs: 7,
@@ -26,14 +26,23 @@ test('lightIndex keeps what the list needs and flags unsafe entries; no bodies',
   assert.equal(idx.entries[0].body, undefined)
   assert.ok(idx.entries[0].hay.length < 2200)
   assert.equal(idx.entries[1].flag, 'empty')
-  assert.deepEqual(Object.keys(idx.entries[0]).sort(), ['bodyLength', 'category', 'created', 'done', 'flag', 'hay', 'id', 'priority', 'title'].sort())
+  assert.deepEqual(Object.keys(idx.entries[0]).sort(), ['bodyLength', 'created', 'done', 'flag', 'hay', 'id', 'priority', 'project', 'title'].sort())
+})
+
+test('lightIndex lists projects with counts, header ones included, and the unfiled count', () => {
+  const v = loaded([mk('P0001', { project: 'Alpha' }), mk('P0002', { project: undefined }), mk('P0003', { project: 'Alpha' })])
+  v.header.projects = ['Empty']
+  const idx = lightIndex(v)
+  assert.deepEqual(idx.projects, [{ name: 'Empty', count: 0 }, { name: 'Alpha', count: 2 }])
+  assert.equal(idx.unfiled, 1)
+  assert.equal(idx.entries[1].project, undefined)
 })
 
 test('lightIndex passes a vault error through', () => {
   assert.deepEqual(lightIndex({ ok: false, error: 'missing', message: 'nope' }), { ok: false, error: 'missing', message: 'nope' })
 })
 
-const many = Array.from({ length: 20 }, (_, i) => mk('P' + String(i + 1).padStart(4, '0'), { done: i % 4 === 0, category: i % 2 ? 'Research' : 'Claude Code' }))
+const many = Array.from({ length: 20 }, (_, i) => mk('P' + String(i + 1).padStart(4, '0'), { done: i % 4 === 0, project: i % 2 ? 'Research' : 'Claude Code' }))
 const IDX = lightIndex(loaded(many))
 
 test('pageOf paginates, clamps the page and reports totals', () => {
@@ -45,13 +54,21 @@ test('pageOf paginates, clamps the page and reports totals', () => {
   assert.deepEqual(pageOf([], { page: 0, pageSize: 8 }), { rows: [], page: 0, pages: 1, total: 0 })
 })
 
-test('pageOf filters by pending or done and searches id, title, category, text', () => {
+test('pageOf filters by pending or done and searches id, title, project, text', () => {
   assert.equal(pageOf(IDX.entries, { filter: 'done', pageSize: 50 }).total, 5)
   assert.equal(pageOf(IDX.entries, { filter: 'pending', pageSize: 50 }).total, 15)
   assert.equal(pageOf(IDX.entries, { query: 'p0003', pageSize: 50 }).total, 1)
   assert.equal(pageOf(IDX.entries, { query: 'RESEARCH', pageSize: 50 }).total, 10)
   assert.equal(pageOf(IDX.entries, { query: 'body p0007', pageSize: 50 }).rows[0].id, 'P0007')
   assert.equal(pageOf(IDX.entries, { query: 'research', filter: 'done', pageSize: 50 }).total, 0)
+})
+
+test('pageOf filters by one project, or by unfiled prompts', () => {
+  const idx = lightIndex(loaded([mk('P0001', { project: 'Alpha' }), mk('P0002', { project: undefined }), mk('P0003', { project: 'Beta' }), mk('P0004', { project: 'Alpha' })]))
+  assert.deepEqual(pageOf(idx.entries, { project: 'Alpha', pageSize: 50 }).rows.map(r => r.id), ['P0001', 'P0004'])
+  assert.deepEqual(pageOf(idx.entries, { project: '__unfiled__', pageSize: 50 }).rows.map(r => r.id), ['P0002'])
+  assert.equal(pageOf(idx.entries, { project: '', pageSize: 50 }).total, 4)
+  assert.equal(pageOf(idx.entries, { project: 'Alpha', filter: 'done', pageSize: 50 }).total, 0)
 })
 
 test('previewBody shows the first lines and says how much is hidden', () => {
@@ -81,5 +98,5 @@ test('runLine says exactly what happened and nothing more', () => {
   assert.match(runLine({ state: 'accepted-changed', id: 'P0003' }), /accepted, but another plugin changed the text/)
   assert.equal(runLine({ state: 'refused', id: 'P0003', reason: 'blocked' }), 'P0003 refused: blocked')
   assert.equal(runLine({ state: 'failed', id: 'P0003', reason: 'boom' }), 'P0003 failed: boom')
-  assert.equal(runLine({ state: 'confirming', id: 'P0003' }), null)
+  assert.equal(runLine({ state: 'idle', id: 'P0003' }), null)
 })

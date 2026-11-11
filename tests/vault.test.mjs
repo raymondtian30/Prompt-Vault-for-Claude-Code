@@ -27,7 +27,7 @@ function memfs(files = {}, { mtimeMs = 1000, sizeOverride } = {}) {
 
 const P = '/h/.claude/prompt-vault/prompts.md'
 const oneEntry =
-  '# DB\n\nNext ID counter: 2\n\n<!-- PROMPTS START -->\n## [ ] P0001: T\n- Category: Other\n- Created: 2026-11-10\n- Status: pending\n\n```text\nhi\n```\n\n---\n<!-- PROMPTS END -->\n'
+  '# DB\n\n<!-- PROMPTS START -->\n## [ ] P0001: T\n- Project: Other\n- Created: 2026-11-10\n- Status: pending\n\n```text\nhi\n```\n\n---\n<!-- PROMPTS END -->\n'
 
 test('vault path defaults to $HOME/.claude/prompt-vault/prompts.md', () => {
   assert.deepEqual(resolveVaultPath({ home: '/Users/x', vaultDir: '' }), {
@@ -61,7 +61,7 @@ test('loadVault returns entries, header and the mtime it read at', async () => {
   const v = await loadVault(fs, P)
   assert.equal(v.ok, true)
   assert.equal(v.entries.length, 1)
-  assert.equal(v.header.counter, 2)
+  assert.deepEqual(v.header.projects, [])
   assert.equal(v.mtimeMs, 4242)
   assert.equal(v.text, oneEntry)
 })
@@ -105,7 +105,7 @@ test('createVault writes the seed header and the result loads with no entries', 
   assert.equal(fs.files[P], SEED)
   const v = await loadVault(fs, P)
   assert.equal(v.entries.length, 0)
-  assert.equal(v.header.counter, 1)
+  assert.deepEqual(v.header.projects, [], 'the seed header must not read as a project list')
   assert.equal(v.hasStart && v.hasEnd, true)
 })
 

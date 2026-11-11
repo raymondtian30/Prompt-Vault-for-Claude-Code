@@ -5,7 +5,7 @@ import { initialExec, reduce } from '../mod/hooks/lib/runstate.mjs'
 import { precheck, runPrompt, fnv1a } from '../mod/hooks/lib/execute.mjs'
 
 const mk = (id, body, over = {}) =>
-  renderEntry({ id, done: false, title: 'T ' + id, category: 'Claude Code', created: '2026-11-10', body, ...over })
+  renderEntry({ id, done: false, title: 'T ' + id, project: 'Claude Code', created: '2026-11-10', body, ...over })
 
 const NESTED = 'do the thing\n```js\nconst x = 1\n```\nend\tTAB ✓ ünï\r\nCRLF'
 const wrapText = entries =>
@@ -19,7 +19,7 @@ const vaultOf = () => ({
   ...parseVault(
     wrapText([
       mk('P0001', NESTED),
-      mk('P0002', 'chatgpt prompt', { category: 'ChatGPT' }),
+      mk('P0002', 'chatgpt prompt', { project: 'ChatGPT' }),
       mk('P0003', ''),
       mk('P0004', '  \n\t '),
       LEGACY,
@@ -56,7 +56,7 @@ function harness(over = {}) {
         t.cancelled = true
       }
     },
-    settings: { submitAsUser: true, confirmNonClaudeCodeCategories: true },
+    settings: { submitAsUser: true },
     ...over,
   }
   return { deps, out, exec: () => exec, setExec: s => (exec = s) }
@@ -84,7 +84,7 @@ test('a 100,000-character prompt is submitted whole', async () => {
 })
 
 test('the asUser setting is passed through', async () => {
-  const h = harness({ settings: { submitAsUser: false, confirmNonClaudeCodeCategories: true } })
+  const h = harness({ settings: { submitAsUser: false } })
   await runPrompt(h.deps, { id: 'P0001', source: press })
   assert.equal(h.out.submits[0].asUser, false)
 })
@@ -170,24 +170,6 @@ test('two presses at once make exactly one submit', async () => {
   assert.equal(results.find(r => !r.ok).code, 'busy-slot')
 })
 
-test('a prompt outside Claude Code asks for confirmation first, then runs when confirmed', async () => {
-  const h = harness()
-  const asked = await runPrompt(h.deps, { id: 'P0002', source: press })
-  assert.deepEqual([asked.ok, asked.code, asked.state], [false, 'needs-confirm', 'confirming'])
-  assert.match(asked.message, /ChatGPT/)
-  assert.equal(h.out.submits.length, 0)
-  assert.equal(h.exec().run.state, 'confirming')
-  const go = await runPrompt(h.deps, { id: 'P0002', source: press, confirmed: true })
-  assert.equal(go.ok, true)
-  assert.equal(h.out.submits[0].text, 'chatgpt prompt')
-})
-
-test('the confirmation can be switched off in settings', async () => {
-  const h = harness({ settings: { submitAsUser: true, confirmNonClaudeCodeCategories: false } })
-  const r = await runPrompt(h.deps, { id: 'P0002', source: press })
-  assert.equal(r.ok, true)
-})
-
 test('only a press or the person typing /vault may execute', async () => {
   for (const source of [
     { kind: 'command', origin: { kind: 'plugin', name: 'other' } },
@@ -252,7 +234,7 @@ test('fnv1a is stable', () => {
 
 test('precheck explains each refusal in plain words', () => {
   const v = vaultOf()
-  const ok = { vault: v, exec: initialExec(), confirmed: false, source: press, settings: { confirmNonClaudeCodeCategories: true } }
+  const ok = { vault: v, exec: initialExec(), source: press, settings: {} }
   assert.match(precheck({ ...ok, id: 'P0003' }).message, /empty/)
   assert.match(precheck({ ...ok, id: 'P0005' }).message, /fence/)
   assert.match(precheck({ ...ok, id: 'P0006' }).message, /more than once/)
